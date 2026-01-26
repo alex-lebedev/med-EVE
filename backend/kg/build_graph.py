@@ -1,0 +1,367 @@
+import json
+import os
+
+# Output file
+GRAPH_FILE = 'graph.json'
+
+# Nodes
+nodes = [
+    # Markers
+    {"id": "m_ferritin", "type": "Marker", "label": "Ferritin", "description": "Iron storage protein, elevated in inflammation, low in deficiency."},
+    {"id": "m_iron", "type": "Marker", "label": "Iron", "description": "Serum iron level, low in deficiency or inflammation."},
+    {"id": "m_tsat", "type": "Marker", "label": "Transferrin Saturation (TSAT)", "description": "Percentage of transferrin bound to iron, low in deficiency."},
+    {"id": "m_hb", "type": "Marker", "label": "Hemoglobin", "description": "Oxygen-carrying protein in red blood cells."},
+    {"id": "m_mcv", "type": "Marker", "label": "Mean Corpuscular Volume (MCV)", "description": "Average red blood cell size."},
+    {"id": "m_rdw", "type": "Marker", "label": "Red Cell Distribution Width (RDW)", "description": "Variation in red blood cell size."},
+    {"id": "m_hscrp", "type": "Marker", "label": "High-Sensitivity C-Reactive Protein (hsCRP)", "description": "Marker of systemic inflammation."},
+    {"id": "m_tsh", "type": "Marker", "label": "Thyroid-Stimulating Hormone (TSH)", "description": "Pituitary hormone regulating thyroid."},
+    {"id": "m_ft4", "type": "Marker", "label": "Free Thyroxine (FT4)", "description": "Active thyroid hormone."},
+    {"id": "m_ft3", "type": "Marker", "label": "Free Triiodothyronine (FT3)", "description": "Active thyroid hormone."},
+    {"id": "m_chol", "type": "Marker", "label": "Total Cholesterol", "description": "Total blood cholesterol level."},
+    {"id": "m_ldl", "type": "Marker", "label": "Low-Density Lipoprotein (LDL)", "description": "Bad cholesterol."},
+    {"id": "m_hdl", "type": "Marker", "label": "High-Density Lipoprotein (HDL)", "description": "Good cholesterol."},
+    {"id": "m_tg", "type": "Marker", "label": "Triglycerides", "description": "Blood fat level."},
+
+    # Patterns
+    {"id": "p_inflam_iron_seq", "type": "Pattern", "label": "Inflammation-mediated iron sequestration", "description": "Inflammation causes iron to be stored in macrophages, reducing serum iron."},
+    {"id": "p_iron_def", "type": "Pattern", "label": "Iron deficiency pattern", "description": "Low iron stores and serum iron with microcytic anemia."},
+    {"id": "p_hypothyroid", "type": "Pattern", "label": "Hypothyroidism pattern", "description": "Elevated TSH with low thyroid hormones."},
+    {"id": "p_dyslipidemia", "type": "Pattern", "label": "Dyslipidemia pattern", "description": "Abnormal lipid levels, often with hypothyroidism."},
+
+    # Conditions
+    {"id": "c_anemia_inflam", "type": "Condition", "label": "Anemia of inflammation", "description": "Anemia due to chronic inflammation sequestering iron."},
+    {"id": "c_iron_def_anemia", "type": "Condition", "label": "Iron deficiency anemia", "description": "Anemia due to insufficient iron."},
+    {"id": "c_hypothyroid", "type": "Condition", "label": "Hypothyroidism", "description": "Underactive thyroid gland."},
+    {"id": "c_subclin_hypo", "type": "Condition", "label": "Subclinical hypothyroidism", "description": "Mild thyroid dysfunction with normal hormones."},
+
+    # Tests
+    {"id": "t_tsat", "type": "Test", "label": "TSAT measurement", "description": "Test to measure transferrin saturation."},
+    {"id": "t_ferritin", "type": "Test", "label": "Ferritin measurement", "description": "Test for iron stores."},
+    {"id": "t_tpo_ab", "type": "Test", "label": "Thyroid peroxidase antibodies", "description": "Test for autoimmune thyroid disease."},
+    {"id": "t_stfr", "type": "Test", "label": "Soluble transferrin receptor (sTfR)", "description": "Test to measure soluble transferrin receptor for iron deficiency differentiation."},
+]
+
+# Edges
+edges = [
+    # Inflammation and iron
+    {
+        "id": "e_001",
+        "from": "m_hscrp",
+        "to": "p_inflam_iron_seq",
+        "relation": "SUPPORTS",
+        "rationale": "Elevated hsCRP indicates inflammation, which can sequester iron in macrophages.",
+        "source_label": "review",
+        "source_note": "Curated from hematology guidelines on anemia of chronic disease."
+    },
+    {
+        "id": "e_002",
+        "from": "p_inflam_iron_seq",
+        "to": "m_ferritin",
+        "relation": "INCREASES",
+        "rationale": "Inflammation causes ferritin to rise as an acute phase reactant.",
+        "source_label": "textbook",
+        "source_note": "Williams Hematology, chapter on iron metabolism."
+    },
+    {
+        "id": "e_003",
+        "from": "p_inflam_iron_seq",
+        "to": "m_iron",
+        "relation": "DECREASES",
+        "rationale": "Iron is sequestered, reducing serum iron levels.",
+        "source_label": "review",
+        "source_note": "Review on iron homeostasis in inflammation."
+    },
+    {
+        "id": "e_004",
+        "from": "p_inflam_iron_seq",
+        "to": "m_tsat",
+        "relation": "DECREASES",
+        "rationale": "Low serum iron leads to low TSAT.",
+        "source_label": "guideline",
+        "source_note": "WHO guidelines on iron deficiency."
+    },
+    {
+        "id": "e_005",
+        "from": "p_inflam_iron_seq",
+        "to": "c_anemia_inflam",
+        "relation": "CAUSES",
+        "rationale": "Chronic inflammation can lead to anemia by impairing erythropoiesis.",
+        "source_label": "review",
+        "source_note": "Curated from multiple studies on anemia of inflammation."
+    },
+    {
+        "id": "e_006",
+        "from": "c_anemia_inflam",
+        "to": "m_hb",
+        "relation": "DECREASES",
+        "rationale": "Anemia reduces hemoglobin levels.",
+        "source_label": "textbook",
+        "source_note": "Hematology textbook on anemias."
+    },
+    {
+        "id": "e_007",
+        "from": "c_anemia_inflam",
+        "to": "m_mcv",
+        "relation": "NORMAL_OR_SLIGHTLY_LOW",
+        "rationale": "Anemia of inflammation is normocytic or mildly microcytic.",
+        "source_label": "guideline",
+        "source_note": "ASH guidelines on anemia classification."
+    },
+    {
+        "id": "e_008",
+        "from": "c_anemia_inflam",
+        "to": "m_rdw",
+        "relation": "NORMAL",
+        "rationale": "RDW is typically normal in anemia of inflammation.",
+        "source_label": "review",
+        "source_note": "Review on red cell indices in anemias."
+    },
+
+    # Iron deficiency
+    {
+        "id": "e_009",
+        "from": "p_iron_def",
+        "to": "m_ferritin",
+        "relation": "DECREASES",
+        "rationale": "Iron deficiency depletes ferritin stores.",
+        "source_label": "guideline",
+        "source_note": "WHO iron deficiency criteria."
+    },
+    {
+        "id": "e_010",
+        "from": "p_iron_def",
+        "to": "m_iron",
+        "relation": "DECREASES",
+        "rationale": "Low iron intake or absorption reduces serum iron.",
+        "source_label": "textbook",
+        "source_note": "Iron metabolism in nutrition texts."
+    },
+    {
+        "id": "e_011",
+        "from": "p_iron_def",
+        "to": "m_tsat",
+        "relation": "DECREASES",
+        "rationale": "Low iron leads to low TSAT.",
+        "source_label": "review",
+        "source_note": "Iron deficiency diagnostics."
+    },
+    {
+        "id": "e_012",
+        "from": "p_iron_def",
+        "to": "c_iron_def_anemia",
+        "relation": "CAUSES",
+        "rationale": "Prolonged deficiency leads to anemia.",
+        "source_label": "guideline",
+        "source_note": "CDC iron deficiency anemia guidelines."
+    },
+    {
+        "id": "e_013",
+        "from": "c_iron_def_anemia",
+        "to": "m_hb",
+        "relation": "DECREASES",
+        "rationale": "Anemia reduces hemoglobin.",
+        "source_label": "textbook",
+        "source_note": "Hematology basics."
+    },
+    {
+        "id": "e_014",
+        "from": "c_iron_def_anemia",
+        "to": "m_mcv",
+        "relation": "DECREASES",
+        "rationale": "Microcytic anemia in iron deficiency.",
+        "source_label": "guideline",
+        "source_note": "Anemia classification guidelines."
+    },
+    {
+        "id": "e_015",
+        "from": "c_iron_def_anemia",
+        "to": "m_rdw",
+        "relation": "INCREASES",
+        "rationale": "Early iron deficiency increases RDW.",
+        "source_label": "review",
+        "source_note": "RDW in iron deficiency."
+    },
+
+    # Differentiation
+    {
+        "id": "e_016",
+        "from": "m_ferritin",
+        "to": "c_anemia_inflam",
+        "relation": "SUPPORTS_HIGH",
+        "rationale": "High ferritin supports inflammation over deficiency.",
+        "source_label": "guideline",
+        "source_note": "Iron studies interpretation."
+    },
+    {
+        "id": "e_017",
+        "from": "m_ferritin",
+        "to": "c_iron_def_anemia",
+        "relation": "SUPPORTS_LOW",
+        "rationale": "Low ferritin supports deficiency.",
+        "source_label": "guideline",
+        "source_note": "Iron deficiency diagnosis."
+    },
+    {
+        "id": "e_018",
+        "from": "c_anemia_inflam",
+        "to": "t_tsat",
+        "relation": "RECOMMENDS_TEST",
+        "rationale": "TSAT helps differentiate inflammation from deficiency.",
+        "source_label": "review",
+        "source_note": "Differentiating anemias."
+    },
+    {
+        "id": "e_019",
+        "from": "c_iron_def_anemia",
+        "to": "t_tsat",
+        "relation": "RECOMMENDS_TEST",
+        "rationale": "TSAT confirms low iron availability.",
+        "source_label": "guideline",
+        "source_note": "Iron deficiency workup."
+    },
+
+    # Thyroid
+    {
+        "id": "e_020",
+        "from": "p_hypothyroid",
+        "to": "m_tsh",
+        "relation": "INCREASES",
+        "rationale": "Pituitary compensates with higher TSH.",
+        "source_label": "textbook",
+        "source_note": "Endocrinology textbook."
+    },
+    {
+        "id": "e_021",
+        "from": "p_hypothyroid",
+        "to": "m_ft4",
+        "relation": "DECREASES",
+        "rationale": "Thyroid fails to produce T4.",
+        "source_label": "guideline",
+        "source_note": "Thyroid function testing."
+    },
+    {
+        "id": "e_022",
+        "from": "p_hypothyroid",
+        "to": "m_ft3",
+        "relation": "DECREASES",
+        "rationale": "T3 is derived from T4.",
+        "source_label": "review",
+        "source_note": "Thyroid hormone metabolism."
+    },
+    {
+        "id": "e_023",
+        "from": "p_hypothyroid",
+        "to": "c_hypothyroid",
+        "relation": "CAUSES",
+        "rationale": "Pattern indicates hypothyroidism.",
+        "source_label": "guideline",
+        "source_note": "ATA hypothyroidism guidelines."
+    },
+    {
+        "id": "e_024",
+        "from": "p_hypothyroid",
+        "to": "c_subclin_hypo",
+        "relation": "RELATED",
+        "rationale": "Subclinical has high TSH but normal T4/T3.",
+        "source_label": "review",
+        "source_note": "Subclinical hypothyroidism definition."
+    },
+
+    # Dyslipidemia
+    {
+        "id": "e_025",
+        "from": "p_dyslipidemia",
+        "to": "m_chol",
+        "relation": "INCREASES",
+        "rationale": "Hypothyroidism can raise cholesterol.",
+        "source_label": "review",
+        "source_note": "Thyroid and lipids."
+    },
+    {
+        "id": "e_026",
+        "from": "p_dyslipidemia",
+        "to": "m_ldl",
+        "relation": "INCREASES",
+        "rationale": "LDL increases in hypothyroidism.",
+        "source_label": "study",
+        "source_note": "Studies on thyroid dyslipidemia."
+    },
+    {
+        "id": "e_027",
+        "from": "p_dyslipidemia",
+        "to": "m_hdl",
+        "relation": "DECREASES",
+        "rationale": "HDL may decrease.",
+        "source_label": "review",
+        "source_note": "Lipid changes in hypothyroidism."
+    },
+    {
+        "id": "e_028",
+        "from": "p_dyslipidemia",
+        "to": "m_tg",
+        "relation": "INCREASES",
+        "rationale": "Triglycerides rise.",
+        "source_label": "guideline",
+        "source_note": "Lipid guidelines."
+    },
+    {
+        "id": "e_029",
+        "from": "c_hypothyroid",
+        "to": "p_dyslipidemia",
+        "relation": "CAUSES",
+        "rationale": "Hypothyroidism alters lipid metabolism.",
+        "source_label": "review",
+        "source_note": "Endocrine effects on lipids."
+    },
+    {
+        "id": "e_030",
+        "from": "c_subclin_hypo",
+        "to": "p_dyslipidemia",
+        "relation": "MAY_CAUSE",
+        "rationale": "Subclinical may have mild lipid effects.",
+        "source_label": "study",
+        "source_note": "Research on subclinical hypothyroidism."
+    },
+
+    # Antibodies for thyroid
+    {
+        "id": "e_031",
+        "from": "c_hypothyroid",
+        "to": "t_tpo_ab",
+        "relation": "RECOMMENDS_TEST",
+        "rationale": "Antibodies confirm autoimmune etiology.",
+        "source_label": "guideline",
+        "source_note": "Thyroid antibody testing."
+    },
+
+    # sTfR for differentiation
+    {
+        "id": "e_032",
+        "from": "c_anemia_inflam",
+        "to": "t_stfr",
+        "relation": "RECOMMENDS_TEST",
+        "rationale": "sTfR helps differentiate inflammation from deficiency.",
+        "source_label": "review",
+        "source_note": "Differentiating anemias with sTfR."
+    },
+    {
+        "id": "e_033",
+        "from": "c_iron_def_anemia",
+        "to": "t_stfr",
+        "relation": "RECOMMENDS_TEST",
+        "rationale": "sTfR is elevated in iron deficiency.",
+        "source_label": "guideline",
+        "source_note": "Iron deficiency diagnostics."
+    },
+]
+
+# Write to JSON
+graph = {
+    "nodes": nodes,
+    "edges": edges
+}
+
+with open(GRAPH_FILE, 'w') as f:
+    json.dump(graph, f, indent=2)
+
+print(f"Graph saved to {GRAPH_FILE}")

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aletheia Demo UI</title>
+    <script src="https://unpkg.com/cytoscape@3.23.0/dist/cytoscape.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; }
+        #timeline { height: 50px; background: #f0f0f0; display: flex; align-items: center; padding: 0 10px; }
+        .step { margin: 0 10px; padding: 5px 10px; border-radius: 5px; background: #ccc; cursor: pointer; }
+        .active { background: #4CAF50; }
+        #main { display: flex; flex: 1; }
+        #left { width: 300px; padding: 10px; border-right: 1px solid #ccc; }
+        #center { flex: 1; position: relative; }
+        #cy { height: 100%; width: 100%; }
+        #right { width: 300px; padding: 10px; border-left: 1px solid #ccc; }
+        .tab { display: none; }
+        .tab.active { display: block; }
+        .marker { margin: 5px 0; }
+        .HIGH { color: red; }
+        .LOW { color: blue; }
+        .NORMAL { color: green; }
+    </style>
+</head>
+<body>
+    <div id="case-selector" style="padding: 10px; background: #f9f9f9;">
+        <label for="case-select">Select Case: </label>
+        <select id="case-select"></select>
+        <button onclick="loadSelectedCase()">Load Case</button>
+    </div>
+    <div id="timeline">
+        <div class="step" data-step="LAB_NORMALIZE">Lab Normalize</div>
+        <div class="step" data-step="CONTEXT_SELECT">Context Select</div>
+        <div class="step" data-step="EVIDENCE_SCORE">Evidence Score</div>
+        <div class="step" data-step="REASON">Reason</div>
+        <div class="step" data-step="GUARDRAILS">Guardrails</div>
+        <div class="step" data-step="FINAL">Final</div>
+    </div>
+    <div id="main">
+        <div id="left">
+            <h3>Lab Card</h3>
+            <div id="lab-card"></div>
+        </div>
+        <div id="center">
+            <div id="cy"></div>
+        </div>
+        <div id="right">
+            <div class="tab-buttons">
+                <button onclick="showTab('clinician')">Clinician</button>
+                <button onclick="showTab('patient')">Patient</button>
+            </div>
+            <div id="clinician" class="tab active">
+                <h3>Hypotheses</h3>
+                <div id="hypotheses"></div>
+            </div>
+            <div id="patient" class="tab">
+                <h3>Patient Actions</h3>
+                <div id="actions"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let cy;
+        let events = [];
+        let currentEventIndex = 0;
+
+        async function loadCases() {
+            const response = await fetch('http://localhost:8000/cases');
+            const cases = await response.json();
+            const select = document.getElementById('case-select');
+            cases.forEach(c => {
+                const option = document.createElement('option');
+                option.value = c.id;
+                option.textContent = c.id;
+                select.appendChild(option);
+            });
+            select.value = 'case_02_anemia_of_inflammation_gotcha'; // default
+        }
+
+        async function loadSelectedCase() {
+            const caseId = document.getElementById('case-select').value;
+            const response = await fetch(`http://localhost:8000/run`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ case_id: caseId })
+            });
+            const data = await response.json();
+            events = data.events;
+            renderInitial(data);
+            playEvents();
+        }
+
+        function renderInitial(data) {
+            // Lab card
+            const labHtml = data.normalized_labs.map(lab => 
+                `<div class="marker ${lab.status}">${lab.marker}: ${lab.value} ${lab.unit} (${lab.status})</div>`
+            ).join('');
+            document.getElementById('lab-card').innerHTML = labHtml;
+
+            // Graph
+            const elements = [];
+            data.evidence_bundle.subgraph.nodes.forEach(node => {
+                elements.push({ data: { id: node.id, label: node.label, type: node.type } });
+            });
+            data.evidence_bundle.subgraph.edges.forEach(edge => {
+                elements.push({ data: { source: edge.from, target: edge.to, label: edge.relation } });
+            });
+
+            cy = cytoscape({
+                container: document.getElementById('cy'),
+                elements: elements,
+                style: [
+                    { selector: 'node', style: { 'label': 'data(label)', 'text-valign': 'center', 'text-halign': 'center' } },
+                    { selector: 'edge', style: { 'label': 'data(label)', 'curve-style': 'bezier' } }
+                ],
+                layout: { name: 'cose' }
+            });
+
+            // Hypotheses
+            const hypoHtml = data.reasoner_output.hypotheses.map(h => 
+                `<div><strong>${h.name}</strong> (${h.confidence})</div>`
+            ).join('');
+            document.getElementById('hypotheses').innerHTML = hypoHtml;
+
+            // Actions
+            const actionHtml = data.reasoner_output.patient_actions.map(a => 
+                `<div>${a.task}</div>`
+            ).join('');
+            document.getElementById('actions').innerHTML = actionHtml;
+        }
+
+        function playEvents() {
+            currentEventIndex = 0;
+            const interval = setInterval(() => {
+                if (currentEventIndex < events.length) {
+                    const event = events[currentEventIndex];
+                    handleEvent(event);
+                    currentEventIndex++;
+                } else {
+                    clearInterval(interval);
+                }
+            }, 1000);
+        }
+
+        function handleEvent(event) {
+            const step = event.step;
+            document.querySelector(`[data-step="${step}"]`).classList.add('active');
+
+            if (event.type === 'HIGHLIGHT') {
+                cy.nodes().style('background-color', '#ccc');
+                cy.edges().style('line-color', '#ccc');
+                event.payload.node_ids.forEach(id => cy.getElementById(id).style('background-color', 'red'));
+                event.payload.edge_ids.forEach(id => cy.getElementById(id).style('line-color', 'red'));
+            }
+        }
+
+        function showTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById(tab).classList.add('active');
+        }
+
+        // Load cases on load
+        window.onload = async () => {
+            await loadCases();
+            loadSelectedCase();
+        };
+    </script>
+</body>
+</html></content>
+</xai:function_call">To create a fancy interactive UI, I've built `frontend/index.html` with Cytoscape for graph visualization. It includes:
+
+- **Timeline bar**: Step-by-step progress with active indicators
+- **Left panel**: Lab card with color-coded markers
+- **Center**: Interactive Cytoscape graph showing knowledge subgraph
+- **Right tabs**: Clinician hypotheses and patient actions
+
+The UI fetches case data from the backend and animates through events, highlighting graph elements as the reasoning progresses. Open `frontend/index.html` in a browser to see the interactive demo.

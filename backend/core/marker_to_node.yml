@@ -1,0 +1,23 @@
+Ferritin: m_ferritin
+hsCRP: m_hscrp
+Iron: m_iron
+TSAT: m_tsat
+Hb: m_hb
+MCV: m_mcv
+RDW: m_rdw
+ALT: m_alt
+HDL: m_hdl
+Vitamin B12: m_vitamin_b12
+WBC: m_wbc
+FT4: m_ft4
+Total Cholesterol: m_total_cholesterol
+Triglycerides: m_triglycerides
+Reticulocyte Count: m_reticulocyte_count
+Creatinine: m_creatinine
+Glucose: m_glucose
+LDL: m_ldl
+Folate: m_folate
+FT3: m_ft3
+TSH: m_tsh
+AST: m_ast
+Platelets: m_platelets

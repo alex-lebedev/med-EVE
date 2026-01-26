@@ -1,0 +1,30 @@
+rules:
+  - id: GR_001
+    description: "Block iron supplementation if inflammation pattern present"
+    condition: "inflammation_pattern and iron_supplementation"
+    message: "Iron supplementation blocked under inflammation pattern."
+    action: "remove_iron_actions"
+
+  - id: GR_002
+    description: "Require antibodies for Hashimoto mention"
+    condition: "hashimoto_mentioned and not antibodies_present"
+    message: "Hashimoto requires antibody confirmation."
+    action: "add_test_recommendation"
+
+  - id: GR_003
+    description: "Block dosing or megadose in actions"
+    condition: "dosing_language in actions"
+    message: "No dosing recommendations allowed."
+    action: "remove_dosing"
+
+  - id: GR_004
+    description: "Actions must be in allowed buckets"
+    condition: "invalid_action_bucket"
+    message: "Action not in allowed buckets."
+    action: "remove_invalid_actions"
+
+  - id: GR_005
+    description: "No invention: markers must exist"
+    condition: "marker_not_in_input"
+    message: "Referenced marker not in input labs."
+    action: "remove_invalid_references"

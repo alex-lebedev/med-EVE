@@ -1,0 +1,199 @@
+{
+  "case_id": "case_07_borderline_values_trend",
+  "patient": {
+    "age": 28,
+    "sex": "F",
+    "context": {
+      "fatigue": true
+    }
+  },
+  "labs": [
+    {
+      "marker": "Ferritin",
+      "value": 16,
+      "unit": "ng/mL",
+      "ref_low": 15,
+      "ref_high": 150,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Iron",
+      "value": 48,
+      "unit": "\u00b5g/dL",
+      "ref_low": 50,
+      "ref_high": 170,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "TSAT",
+      "value": 19,
+      "unit": "\u00b5g/dL",
+      "ref_low": 20,
+      "ref_high": 50,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Hb",
+      "value": 11.8,
+      "unit": "g/dL",
+      "ref_low": 12,
+      "ref_high": 16,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Creatinine",
+      "value": 0.6,
+      "unit": "mg/dL",
+      "ref_low": 0.7,
+      "ref_high": 1.2,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "TSH",
+      "value": 1.2,
+      "unit": "mIU/L",
+      "ref_low": 0.4,
+      "ref_high": 4.0,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Glucose",
+      "value": 65.8,
+      "unit": "mg/dL",
+      "ref_low": 70,
+      "ref_high": 100,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "MCV",
+      "value": 90.5,
+      "unit": "fL",
+      "ref_low": 80,
+      "ref_high": 100,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Platelets",
+      "value": 518.1,
+      "unit": "K/\u00b5L",
+      "ref_low": 150,
+      "ref_high": 450,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Vitamin B12",
+      "value": 803.5,
+      "unit": "pg/mL",
+      "ref_low": 200,
+      "ref_high": 900,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "LDL",
+      "value": 20.1,
+      "unit": "mg/dL",
+      "ref_low": 0,
+      "ref_high": 100,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "AST",
+      "value": 12.6,
+      "unit": "U/L",
+      "ref_low": 10,
+      "ref_high": 40,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "RDW",
+      "value": 17.1,
+      "unit": "%",
+      "ref_low": 11.5,
+      "ref_high": 14.5,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "FT3",
+      "value": 3.7,
+      "unit": "pg/mL",
+      "ref_low": 2.3,
+      "ref_high": 4.2,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "HDL",
+      "value": 66.9,
+      "unit": "mg/dL",
+      "ref_low": 40,
+      "ref_high": 100,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "hsCRP",
+      "value": 0.3,
+      "unit": "mg/L",
+      "ref_low": 0,
+      "ref_high": 3,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "ALT",
+      "value": 42.6,
+      "unit": "U/L",
+      "ref_low": 7,
+      "ref_high": 56,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "WBC",
+      "value": 7.5,
+      "unit": "K/\u00b5L",
+      "ref_low": 4,
+      "ref_high": 11,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Reticulocyte Count",
+      "value": 2.1,
+      "unit": "%",
+      "ref_low": 0.5,
+      "ref_high": 2.5,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Triglycerides",
+      "value": 148.0,
+      "unit": "mg/dL",
+      "ref_low": 0,
+      "ref_high": 150,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "FT4",
+      "value": 1.6,
+      "unit": "ng/dL",
+      "ref_low": 0.8,
+      "ref_high": 1.8,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Folate",
+      "value": 12.0,
+      "unit": "ng/mL",
+      "ref_low": 2,
+      "ref_high": 20,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Total Cholesterol",
+      "value": 204.4,
+      "unit": "mg/dL",
+      "ref_low": 0,
+      "ref_high": 200,
+      "timestamp": "2026-01-10"
+    }
+  ],
+  "meta": {
+    "scenario": "borderline_values_trend"
+  }
+}

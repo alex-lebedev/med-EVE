@@ -1,0 +1,200 @@
+{
+  "case_id": "case_04_primary_hypothyroid",
+  "patient": {
+    "age": 50,
+    "sex": "F",
+    "context": {
+      "weight_gain": true,
+      "fatigue": true
+    }
+  },
+  "labs": [
+    {
+      "marker": "TSH",
+      "value": 15,
+      "unit": "mIU/L",
+      "ref_low": 0.4,
+      "ref_high": 4.0,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "FT4",
+      "value": 0.5,
+      "unit": "ng/dL",
+      "ref_low": 0.8,
+      "ref_high": 1.8,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "FT3",
+      "value": 2.0,
+      "unit": "pg/mL",
+      "ref_low": 2.3,
+      "ref_high": 4.2,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Reticulocyte Count",
+      "value": 1.1,
+      "unit": "%",
+      "ref_low": 0.5,
+      "ref_high": 2.5,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "LDL",
+      "value": 105.7,
+      "unit": "mg/dL",
+      "ref_low": 0,
+      "ref_high": 100,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "RDW",
+      "value": 12.8,
+      "unit": "%",
+      "ref_low": 11.5,
+      "ref_high": 14.5,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "WBC",
+      "value": 10.2,
+      "unit": "K/\u00b5L",
+      "ref_low": 4,
+      "ref_high": 11,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Glucose",
+      "value": 119.0,
+      "unit": "mg/dL",
+      "ref_low": 70,
+      "ref_high": 100,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Creatinine",
+      "value": 1.0,
+      "unit": "mg/dL",
+      "ref_low": 0.7,
+      "ref_high": 1.2,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "ALT",
+      "value": 55.9,
+      "unit": "U/L",
+      "ref_low": 7,
+      "ref_high": 56,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Hb",
+      "value": 18.6,
+      "unit": "g/dL",
+      "ref_low": 12,
+      "ref_high": 16,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "MCV",
+      "value": 78.8,
+      "unit": "fL",
+      "ref_low": 80,
+      "ref_high": 100,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "hsCRP",
+      "value": 2.6,
+      "unit": "mg/L",
+      "ref_low": 0,
+      "ref_high": 3,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Folate",
+      "value": 7.2,
+      "unit": "ng/mL",
+      "ref_low": 2,
+      "ref_high": 20,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Iron",
+      "value": 55.1,
+      "unit": "\u00b5g/dL",
+      "ref_low": 50,
+      "ref_high": 170,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Triglycerides",
+      "value": 149.3,
+      "unit": "mg/dL",
+      "ref_low": 0,
+      "ref_high": 150,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Ferritin",
+      "value": 68.0,
+      "unit": "ng/mL",
+      "ref_low": 15,
+      "ref_high": 150,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Vitamin B12",
+      "value": 667.5,
+      "unit": "pg/mL",
+      "ref_low": 200,
+      "ref_high": 900,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "TSAT",
+      "value": 57.6,
+      "unit": "%",
+      "ref_low": 20,
+      "ref_high": 50,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "AST",
+      "value": 44.2,
+      "unit": "U/L",
+      "ref_low": 10,
+      "ref_high": 40,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Platelets",
+      "value": 352.1,
+      "unit": "K/\u00b5L",
+      "ref_low": 150,
+      "ref_high": 450,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "Total Cholesterol",
+      "value": 187.8,
+      "unit": "mg/dL",
+      "ref_low": 0,
+      "ref_high": 200,
+      "timestamp": "2026-01-10"
+    },
+    {
+      "marker": "HDL",
+      "value": 108.8,
+      "unit": "mg/dL",
+      "ref_low": 40,
+      "ref_high": 100,
+      "timestamp": "2026-01-10"
+    }
+  ],
+  "meta": {
+    "scenario": "primary_hypothyroid"
+  }
+}

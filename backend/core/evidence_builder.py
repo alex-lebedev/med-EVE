@@ -1,12 +1,16 @@
 from .kg_store import kg_store
+from .model_manager import model_manager
+from .agent_manager import agent_manager
+from .events import Step
 import yaml
 import os
+import json
 
 # Load marker to node mapping
 with open(os.path.join(os.path.dirname(__file__), 'marker_to_node.yml')) as f:
     MARKER_TO_NODE = yaml.safe_load(f)
 
-# Weights for evidence
+# Weights for evidence (rule-based fallback)
 WEIGHTS = {
     'hsCRP': {'SUPPORTS': 0.8, 'CONTRADICTS': 0.0},
     'Ferritin': {'HIGH': {'SUPPORTS': 0.7, 'CONTRADICTS': 0.6}, 'LOW': {'SUPPORTS': 0.6, 'CONTRADICTS': 0.7}},
@@ -15,6 +19,72 @@ WEIGHTS = {
     'Hb': {'LOW': {'SUPPORTS': 0.3, 'CONTRADICTS': 0.2}},
     'RDW': {'NORMAL': {'SUPPORTS': 0.2, 'CONTRADICTS': 0.1}},
 }
+
+def get_evidence_weight(marker, status, relation, pattern_id, case_card, evidence_bundle, events_list):
+    """
+    Get weight for evidence item, using model if needed
+    """
+    # Check if we should use model for weighting
+    context = {
+        'marker': marker,
+        'status': status,
+        'evidence_bundle': evidence_bundle
+    }
+    
+    if agent_manager.should_use_agent('evidence_weighting', context) and not model_manager.lite_mode:
+        try:
+            # Prepare data for agent
+            context_markers = case_card.get('abnormal_markers', [])
+            agent_data = {
+                "marker": marker,
+                "status": status,
+                "relation": relation,
+                "pattern_id": pattern_id,
+                "context_markers": ", ".join(context_markers),
+                "patient_context_json": json.dumps(case_card.get('patient_context', {}), indent=2)
+            }
+            
+            # Call evidence weighting agent
+            agent_response = agent_manager.call_agent(
+                'evidence_weighting',
+                context,
+                agent_data,
+                events_list=events_list,
+                step=Step.EVIDENCE_SCORE
+            )
+            
+            if agent_response.get('use_model') and agent_response.get('result'):
+                model_output = agent_response['result']
+                weight = model_output.get('weight', 0.5)
+                rationale = model_output.get('rationale', '')
+                
+                # Emit model weight assigned event
+                if events_list:
+                    model_weight_assigned(
+                        events_list,
+                        Step.EVIDENCE_SCORE,
+                        marker,
+                        status,
+                        relation,
+                        pattern_id,
+                        weight,
+                        rationale
+                    )
+                
+                return weight
+        except Exception as e:
+            # Fallback to rule-based on error
+            pass
+    
+    # Use rule-based weight
+    marker_weights = WEIGHTS.get(marker, {})
+    if isinstance(marker_weights, dict):
+        if status in marker_weights:
+            return marker_weights[status].get(relation, 0.1)
+        else:
+            # Check if marker_weights has direct relation keys (for markers like 'hsCRP')
+            return marker_weights.get(relation, 0.1)
+    return 0.1
 
 def build_evidence(case_card, subgraph, normalized_labs, events_list, events):
     abnormal_markers = case_card['abnormal_markers']
@@ -49,7 +119,12 @@ def build_evidence(case_card, subgraph, normalized_labs, events_list, events):
                     continue
 
                 relation = edge['relation']
-                weight = WEIGHTS.get(marker, {}).get(status, {}).get(relation, 0.1) if isinstance(WEIGHTS.get(marker, {}), dict) else WEIGHTS.get(marker, {}).get(relation, 0.1)
+                
+                # Get weight (may use model for complex cases)
+                weight = get_evidence_weight(
+                    marker, status, relation, pattern_id,
+                    case_card, {'supports': supports, 'contradictions': contradictions}, events_list
+                )
 
                 evidence_item = {
                     "pattern_id": pattern_id,

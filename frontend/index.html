@@ -3,177 +3,2255 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aletheia Demo UI</title>
+    <title>Aletheia Demo - Medical AI Reasoning</title>
     <script src="https://unpkg.com/cytoscape@3.23.0/dist/cytoscape.min.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; }
-        #timeline { height: 50px; background: #f0f0f0; display: flex; align-items: center; padding: 0 10px; }
-        .step { margin: 0 10px; padding: 5px 10px; border-radius: 5px; background: #ccc; cursor: pointer; }
-        .active { background: #4CAF50; }
-        #main { display: flex; flex: 1; }
-        #left { width: 300px; padding: 10px; border-right: 1px solid #ccc; }
-        #center { flex: 1; position: relative; }
-        #cy { height: 100%; width: 100%; }
-        #right { width: 300px; padding: 10px; border-left: 1px solid #ccc; }
-        .tab { display: none; }
-        .tab.active { display: block; }
-        .marker { margin: 5px 0; }
-        .HIGH { color: red; }
-        .LOW { color: blue; }
-        .NORMAL { color: green; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: #f5f5f5;
+            color: #333;
+            overflow: hidden;
+        }
+
+        /* Header */
+        #header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        #header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-right: auto;
+        }
+
+        #demo-mode-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        #demo-mode-btn:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-1px);
+        }
+
+        #case-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #case-selector select, #case-selector button {
+            padding: 6px 12px;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        #case-selector select option {
+            background: #667eea;
+            color: white;
+        }
+
+        /* Timeline */
+        #timeline {
+            background: white;
+            border-bottom: 2px solid #e0e0e0;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            overflow-x: auto;
+            min-height: 70px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .step-chip {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            border-radius: 25px;
+            background: #e8eaf6;
+            color: #5c6bc0;
+            font-size: 13px;
+            font-weight: 600;
+            white-space: nowrap;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .step-chip::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            transition: left 0.5s;
+        }
+
+        .step-chip.active::before {
+            left: 100%;
+        }
+
+        .step-chip.active {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+            transform: scale(1.05);
+        }
+
+        .step-chip.completed {
+            background: linear-gradient(135deg, #81C784 0%, #66bb6a 100%);
+            color: white;
+        }
+
+        .step-duration {
+            font-size: 11px;
+            opacity: 0.9;
+            margin-left: 4px;
+            font-weight: 400;
+        }
+
+        /* Playback controls */
+        #playback-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
+            padding-left: 20px;
+            border-left: 2px solid #e0e0e0;
+        }
+
+        #playback-controls button {
+            padding: 8px 14px;
+            border: 2px solid #e0e0e0;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        #playback-controls button:hover {
+            background: #f5f5f5;
+            border-color: #667eea;
+            transform: translateY(-1px);
+        }
+
+        #playback-controls button.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        }
+
+        /* Main layout */
+        #main {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Left panel */
+        #left {
+            width: 320px;
+            background: white;
+            border-right: 2px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        #left h3 {
+            padding: 16px;
+            border-bottom: 2px solid #e0e0e0;
+            font-size: 16px;
+            font-weight: 600;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            color: #495057;
+        }
+
+        #abnormal-labs {
+            padding: 12px;
+        }
+
+        .lab-item {
+            padding: 14px;
+            margin-bottom: 10px;
+            border-radius: 10px;
+            border-left: 5px solid #ddd;
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .lab-item.HIGH {
+            border-left-color: #f44336;
+            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+        }
+
+        .lab-item.LOW {
+            border-left-color: #2196F3;
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        }
+
+        .lab-item.pulse {
+            animation: pulseGlow 1.5s ease-in-out infinite;
+            box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+            transform: scale(1.02);
+        }
+
+        @keyframes pulseGlow {
+            0% { 
+                box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+                transform: scale(1.02);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+            70% { 
+                box-shadow: 0 0 0 15px rgba(76, 175, 80, 0);
+                transform: scale(1.02);
+            }
+            100% { 
+                box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+                transform: scale(1.02);
+            }
+        }
+
+        .lab-item .marker-name {
+            font-weight: 700;
+            font-size: 15px;
+            margin-bottom: 6px;
+            color: #212529;
+        }
+
+        .lab-item .lab-value {
+            font-size: 13px;
+            color: #6c757d;
+        }
+
+        /* Center - Graph */
+        #center {
+            flex: 1;
+            position: relative;
+            background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
+            overflow: hidden;
+        }
+
+        #cy {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Legend */
+        #graph-legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+            z-index: 100;
+            min-width: 220px;
+            border: 2px solid #e0e0e0;
+            transition: opacity 0.3s;
+        }
+
+        #graph-legend.collapsed {
+            opacity: 0.3;
+        }
+
+        #graph-legend.collapsed:hover {
+            opacity: 1;
+        }
+
+        #graph-legend h4 {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: #495057;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        #graph-legend-toggle {
+            cursor: pointer;
+            font-size: 12px;
+            color: #667eea;
+            font-weight: 500;
+        }
+
+        .legend-section {
+            margin-bottom: 14px;
+        }
+
+        .legend-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .legend-section h5 {
+            font-size: 11px;
+            font-weight: 700;
+            color: #6c757d;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        .legend-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .legend-node {
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            border: 2px solid;
+            flex-shrink: 0;
+        }
+
+        .legend-node.marker {
+            background-color: #90CAF9;
+            border-color: #1976D2;
+        }
+
+        .legend-node.pattern {
+            background-color: #A5D6A7;
+            border-color: #388E3C;
+        }
+
+        .legend-node.condition {
+            background-color: #FFCC80;
+            border-color: #F57C00;
+        }
+
+        .legend-node.test {
+            background-color: #CE93D8;
+            border-color: #7B1FA2;
+        }
+
+        .legend-edge {
+            width: 40px;
+            height: 3px;
+            flex-shrink: 0;
+            position: relative;
+        }
+
+        .legend-edge::after {
+            content: '';
+            position: absolute;
+            right: -6px;
+            top: -3px;
+            width: 0;
+            height: 0;
+            border-left: 6px solid;
+            border-top: 4px solid transparent;
+            border-bottom: 4px solid transparent;
+        }
+
+        .legend-edge.supports {
+            background-color: #4CAF50;
+        }
+
+        .legend-edge.supports::after {
+            border-left-color: #4CAF50;
+        }
+
+        .legend-edge.contradicts {
+            background-color: #f44336;
+        }
+
+        .legend-edge.contradicts::after {
+            border-left-color: #f44336;
+        }
+
+        .legend-edge.recommends {
+            background-color: #FF9800;
+            border-style: dashed;
+        }
+
+        .legend-edge.recommends::after {
+            border-left-color: #FF9800;
+        }
+
+        .legend-edge.causal {
+            background-color: #2196F3;
+        }
+
+        .legend-edge.causal::after {
+            border-left-color: #2196F3;
+        }
+
+        /* Agent Activity Panel */
+        #agent-activity {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+            z-index: 100;
+            min-width: 280px;
+            max-width: 400px;
+            max-height: 500px;
+            overflow-y: auto;
+            border: 2px solid #e0e0e0;
+        }
+
+        #agent-activity h4 {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: #495057;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        #agent-content {
+            font-size: 12px;
+        }
+
+        .agent-call-item {
+            padding: 10px;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border-radius: 8px;
+            border-left: 4px solid #2196F3;
+        }
+
+        .agent-call-item.rule-based {
+            background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+            border-left-color: #9E9E9E;
+        }
+
+        .agent-call-item h6 {
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            color: #1976D2;
+        }
+
+        .agent-call-item.rule-based h6 {
+            color: #616161;
+        }
+
+        .agent-call-item .agent-type {
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .agent-call-item .agent-time {
+            font-size: 11px;
+            color: #6c757d;
+            margin-top: 4px;
+        }
+
+        .agent-call-item .agent-rationale {
+            font-size: 11px;
+            color: #424242;
+            margin-top: 4px;
+            font-style: italic;
+        }
+
+        /* Graph animation styles - will be applied via Cytoscape */
+        .node-highlight {
+            animation: nodePulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes nodePulse {
+            0%, 100% { 
+                transform: scale(1);
+                filter: drop-shadow(0 0 8px rgba(76, 175, 80, 0.8));
+            }
+            50% { 
+                transform: scale(1.15);
+                filter: drop-shadow(0 0 20px rgba(76, 175, 80, 1));
+            }
+        }
+
+        .edge-highlight {
+            animation: edgeFlow 2s ease-in-out infinite;
+        }
+
+        @keyframes edgeFlow {
+            0% { 
+                opacity: 0.6;
+                stroke-width: 3px;
+            }
+            50% { 
+                opacity: 1;
+                stroke-width: 5px;
+            }
+            100% { 
+                opacity: 0.6;
+                stroke-width: 3px;
+            }
+        }
+
+        /* Right panel */
+        #right {
+            width: 380px;
+            background: white;
+            border-left: 2px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .tab-buttons {
+            display: flex;
+            border-bottom: 2px solid #e0e0e0;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: #6c757d;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .tab-button::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s;
+        }
+
+        .tab-button.active {
+            background: white;
+            color: #667eea;
+        }
+
+        .tab-button.active::after {
+            width: 100%;
+        }
+
+        .tab-content {
+            display: none;
+            padding: 16px;
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Hypothesis card */
+        .hypothesis-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 12px;
+            padding: 18px;
+            margin-bottom: 14px;
+            border: 2px solid #e0e0e0;
+            transition: all 0.3s;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .hypothesis-card:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+
+        .hypothesis-card h4 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: #212529;
+        }
+
+        .hypothesis-card .confidence {
+            display: inline-block;
+            padding: 6px 12px;
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            box-shadow: 0 2px 6px rgba(76, 175, 80, 0.3);
+        }
+
+        .hypothesis-card .confidence.high-confidence {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+        }
+
+        .hypothesis-card .confidence.medium-confidence {
+            background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
+            box-shadow: 0 2px 6px rgba(255, 152, 0, 0.3);
+        }
+
+        .hypothesis-card .confidence.low-confidence {
+            background: linear-gradient(135deg, #9E9E9E 0%, #757575 100%);
+            box-shadow: 0 2px 6px rgba(158, 158, 158, 0.3);
+        }
+
+        .hypothesis-card .next-tests {
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 2px solid #e0e0e0;
+        }
+
+        .hypothesis-card .next-tests h5 {
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: #495057;
+        }
+
+        .hypothesis-card .next-tests ul {
+            list-style: none;
+            font-size: 13px;
+            color: #6c757d;
+        }
+
+        .hypothesis-card .next-tests li {
+            padding: 6px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+
+        .hypothesis-card .next-tests li::before {
+            content: '→';
+            position: absolute;
+            left: 0;
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        /* Patient action card */
+        .action-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 10px;
+            border-left: 5px solid #2196F3;
+            transition: all 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .action-card:hover {
+            transform: translateX(4px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .action-card .task {
+            font-weight: 700;
+            font-size: 14px;
+            margin-bottom: 6px;
+            color: #212529;
+        }
+
+        .action-card .why {
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 8px;
+        }
+
+        .action-card .risk {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .action-card .risk.low {
+            background: linear-gradient(135deg, #c8e6c9 0%, #a5d6a7 100%);
+            color: #2e7d32;
+        }
+
+        .action-card .risk.medium {
+            background: linear-gradient(135deg, #ffe082 0%, #ffcc02 100%);
+            color: #f57c00;
+        }
+
+        .action-card .risk.high {
+            background: linear-gradient(135deg, #ffcdd2 0%, #ef9a9a 100%);
+            color: #c62828;
+        }
+
+        /* Reasoning trace */
+        #reasoning-trace {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #e0e0e0;
+        }
+
+        #reasoning-trace-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+            cursor: pointer;
+            user-select: none;
+            padding: 8px;
+            border-radius: 6px;
+            transition: background 0.2s;
+        }
+
+        #reasoning-trace-toggle:hover {
+            background: #f5f5f5;
+        }
+
+        #reasoning-trace-toggle input {
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+        }
+
+        #reasoning-trace-content {
+            display: none;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        #reasoning-trace-content.active {
+            display: block;
+            animation: fadeIn 0.3s;
+        }
+
+        .evidence-item {
+            padding: 10px;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 8px;
+            font-size: 12px;
+            border-left: 4px solid #4CAF50;
+            transition: all 0.2s;
+        }
+
+        .evidence-item:hover {
+            transform: translateX(4px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .evidence-item .edge-id {
+            font-family: 'Courier New', monospace;
+            color: #6c757d;
+            font-size: 11px;
+            margin-top: 4px;
+        }
+
+        /* Trust Moments */
+        #trust-moments {
+            position: fixed;
+            top: 90px;
+            right: 20px;
+            width: 420px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .trust-moment {
+            background: white;
+            border-radius: 12px;
+            padding: 18px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            animation: slideInRight 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 2px solid;
+        }
+
+        @keyframes slideInRight {
+            from {
+                transform: translateX(120%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .guardrail-fail {
+            border-left: 6px solid #f44336;
+            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+            border-color: #f44336;
+        }
+
+        .guardrail-fail h4 {
+            color: #c62828;
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .guardrail-fail .rule-id {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+
+        .guardrail-fail .message {
+            font-size: 13px;
+            color: #212529;
+            line-height: 1.5;
+        }
+
+        .patch-diff {
+            border-left: 6px solid #FF9800;
+            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+            border-color: #FF9800;
+        }
+
+        .patch-diff h4 {
+            color: #e65100;
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .diff-section {
+            margin-bottom: 14px;
+        }
+
+        .diff-section h5 {
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #6c757d;
+        }
+
+        .diff-before, .diff-after {
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.4;
+        }
+
+        .diff-before {
+            background: linear-gradient(135deg, #ffcdd2 0%, #ef9a9a 100%);
+            color: #c62828;
+            margin-bottom: 6px;
+            border: 1px solid #ef9a9a;
+        }
+
+        .diff-after {
+            background: linear-gradient(135deg, #c8e6c9 0%, #a5d6a7 100%);
+            color: #2e7d32;
+            border: 1px solid #a5d6a7;
+        }
     </style>
 </head>
 <body>
-    <div id="case-selector" style="padding: 10px; background: #f9f9f9;">
-        <label for="case-select">Select Case: </label>
-        <select id="case-select"></select>
-        <button onclick="loadSelectedCase()">Load Case</button>
-    </div>
-    <div id="timeline">
-        <div class="step" data-step="LAB_NORMALIZE">Lab Normalize</div>
-        <div class="step" data-step="CONTEXT_SELECT">Context Select</div>
-        <div class="step" data-step="EVIDENCE_SCORE">Evidence Score</div>
-        <div class="step" data-step="REASON">Reason</div>
-        <div class="step" data-step="GUARDRAILS">Guardrails</div>
-        <div class="step" data-step="FINAL">Final</div>
-    </div>
-    <div id="main">
-        <div id="left">
-            <h3>Lab Card</h3>
-            <div id="lab-card"></div>
+    <!-- Header -->
+    <div id="header">
+        <h1>🧬 Aletheia Medical AI</h1>
+        <button id="demo-mode-btn" onclick="runDemoMode()">🎬 Demo Mode</button>
+        <div id="case-selector">
+            <label for="case-select">Case:</label>
+            <select id="case-select"></select>
+            <button onclick="loadSelectedCase()">Load</button>
         </div>
+    </div>
+
+    <!-- Timeline -->
+    <div id="timeline">
+        <div class="step-chip" data-step="LAB_NORMALIZE">
+            <span>Lab Normalize</span>
+            <span class="step-duration" id="duration-LAB_NORMALIZE"></span>
+        </div>
+        <div class="step-chip" data-step="CONTEXT_SELECT">
+            <span>Context Select</span>
+            <span class="step-duration" id="duration-CONTEXT_SELECT"></span>
+        </div>
+        <div class="step-chip" data-step="EVIDENCE_SCORE">
+            <span>Evidence Score</span>
+            <span class="step-duration" id="duration-EVIDENCE_SCORE"></span>
+        </div>
+        <div class="step-chip" data-step="REASON">
+            <span>Reason</span>
+            <span class="step-duration" id="duration-REASON"></span>
+        </div>
+        <div class="step-chip" data-step="GUARDRAILS">
+            <span>Guardrails</span>
+            <span class="step-duration" id="duration-GUARDRAILS"></span>
+        </div>
+        <div class="step-chip" data-step="FINAL">
+            <span>Final</span>
+            <span class="step-duration" id="duration-FINAL"></span>
+        </div>
+        <div id="playback-controls">
+            <button id="play-pause-btn" onclick="togglePlayPause()">▶ Play</button>
+            <button onclick="replay()">↻ Replay</button>
+            <button onclick="jumpToEnd()">⏭ Jump to End</button>
+        </div>
+    </div>
+
+    <!-- Main layout -->
+    <div id="main">
+        <!-- Left: Abnormal labs -->
+        <div id="left">
+            <h3>Abnormal Labs</h3>
+            <div id="abnormal-labs"></div>
+        </div>
+
+        <!-- Center: Graph -->
         <div id="center">
             <div id="cy"></div>
+            <!-- Legend -->
+            <div id="graph-legend">
+                <h4>
+                    <span>Graph Legend</span>
+                    <span id="legend-toggle" class="legend-toggle" onclick="toggleLegend()">−</span>
+                </h4>
+                <div id="legend-content">
+                    <div class="legend-section">
+                        <h5>Node Types</h5>
+                        <div class="legend-item">
+                            <div class="legend-node marker"></div>
+                            <span>Marker (Lab Value)</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-node pattern"></div>
+                            <span>Pattern</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-node condition"></div>
+                            <span>Condition</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-node test"></div>
+                            <span>Test</span>
+                        </div>
+                    </div>
+                    <div class="legend-section">
+                        <h5>Edge Types</h5>
+                        <div class="legend-item">
+                            <div class="legend-edge supports"></div>
+                            <span>Supports</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-edge contradicts"></div>
+                            <span>Contradicts</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-edge recommends"></div>
+                            <span>Recommends Test</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-edge causal"></div>
+                            <span>Causal (Increases/Decreases)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Agent Activity Panel -->
+            <div id="agent-activity" style="display: none;">
+                <h4>
+                    <span>Agent Activity</span>
+                    <span id="agent-toggle" onclick="toggleAgentActivity()" style="cursor: pointer; color: #667eea;">−</span>
+                </h4>
+                <div id="agent-content"></div>
+            </div>
         </div>
+
+        <!-- Right: Tabs -->
         <div id="right">
             <div class="tab-buttons">
-                <button onclick="showTab('clinician')">Clinician</button>
-                <button onclick="showTab('patient')">Patient</button>
+                <button class="tab-button active" onclick="showTab('clinician')">Clinician</button>
+                <button class="tab-button" onclick="showTab('patient')">Patient</button>
             </div>
-            <div id="clinician" class="tab active">
+            <div id="clinician" class="tab-content active">
                 <h3>Hypotheses</h3>
                 <div id="hypotheses"></div>
+                <div id="reasoning-trace">
+                    <div id="reasoning-trace-toggle">
+                        <input type="checkbox" id="trace-checkbox" onclick="toggleReasoningTrace(event)">
+                        <label for="trace-checkbox" onclick="toggleReasoningTrace(event)">Show Reasoning Trace</label>
+                    </div>
+                    <div id="reasoning-trace-content"></div>
+                </div>
             </div>
-            <div id="patient" class="tab">
+            <div id="patient" class="tab-content">
                 <h3>Patient Actions</h3>
                 <div id="actions"></div>
             </div>
         </div>
     </div>
 
+    <!-- Trust Moments -->
+    <div id="trust-moments"></div>
+
     <script>
         let cy;
         let events = [];
         let currentEventIndex = 0;
+        let isPlaying = false;
+        let playInterval = null;
+        let pipelineData = null;
+        let stepDurations = {};
+        let highlightedNodes = new Set();
+        let highlightedEdges = new Set();
+        let animationTimeouts = [];
+
+        const API_BASE = 'http://localhost:8000';
+
+        // Initialize
+        async function init() {
+            try {
+                await loadCases();
+                
+                // Check URL parameters for auto-load and autoplay
+                const urlParams = new URLSearchParams(window.location.search);
+                const caseParam = urlParams.get('case');
+                const autoplayParam = urlParams.get('autoplay');
+                
+                if (caseParam) {
+                    const select = document.getElementById('case-select');
+                    if (select) {
+                        select.value = caseParam;
+                    }
+                    const autoPlay = autoplayParam === 'true';
+                    await runCase(caseParam, autoPlay);
+                } else {
+                    // Default: load gotcha case with autoplay if no case specified
+                    await runCase('case_02_anemia_of_inflammation_gotcha', true);
+                }
+            } catch (error) {
+                console.error('Initialization error:', error);
+                document.getElementById('hypotheses').innerHTML = `<div style="padding: 20px; text-align: center; color: #f44336;">
+                    <strong>Initialization Error</strong><br>
+                    ${error.message}<br>
+                    <small>Check browser console for details</small>
+                </div>`;
+            }
+        }
 
         async function loadCases() {
-            const response = await fetch('http://localhost:8000/cases');
-            const cases = await response.json();
-            const select = document.getElementById('case-select');
-            cases.forEach(c => {
-                const option = document.createElement('option');
-                option.value = c.id;
-                option.textContent = c.id;
-                select.appendChild(option);
-            });
-            select.value = 'case_02_anemia_of_inflammation_gotcha'; // default
+            try {
+                const response = await fetch(`${API_BASE}/cases`);
+                if (!response.ok) {
+                    throw new Error(`Failed to load cases: HTTP ${response.status}`);
+                }
+                const cases = await response.json();
+                const select = document.getElementById('case-select');
+                if (select) {
+                    select.innerHTML = '';
+                    cases.forEach(c => {
+                        const option = document.createElement('option');
+                        option.value = c.id;
+                        option.textContent = c.id;
+                        select.appendChild(option);
+                    });
+                    select.value = 'case_02_anemia_of_inflammation_gotcha';
+                }
+            } catch (error) {
+                console.error('Failed to load cases:', error);
+                // Continue anyway - user can still try to load a case manually
+            }
         }
 
         async function loadSelectedCase() {
             const caseId = document.getElementById('case-select').value;
-            const response = await fetch(`http://localhost:8000/run`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ case_id: caseId })
+            await runCase(caseId);
+        }
+
+        async function runDemoMode() {
+            await runCase('case_02_anemia_of_inflammation_gotcha', true);
+        }
+
+        async function runCase(caseId, autoPlay = false) {
+            try {
+                resetUI();
+                
+                // Show loading state
+                document.getElementById('hypotheses').innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">Loading case...</div>';
+                
+                const response = await fetch(`${API_BASE}/run`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ case_id: caseId })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                pipelineData = await response.json();
+                
+                if (!pipelineData || !pipelineData.evidence_bundle) {
+                    throw new Error('Invalid response from backend');
+                }
+                
+                events = pipelineData.events || [];
+                
+                renderInitial(pipelineData);
+                
+                if (autoPlay) {
+                    setTimeout(() => {
+                        playEvents();
+                    }, 800);
+                }
+            } catch (error) {
+                console.error('Failed to run case:', error);
+                document.getElementById('hypotheses').innerHTML = `<div style="padding: 20px; text-align: center; color: #f44336;">
+                    <strong>Error loading case</strong><br>
+                    ${error.message}<br>
+                    <small>Make sure the backend is running on http://localhost:8000</small>
+                </div>`;
+                alert(`Failed to load case: ${error.message}\n\nMake sure the backend is running on http://localhost:8000`);
+            }
+        }
+
+        function resetUI() {
+            currentEventIndex = 0;
+            isPlaying = false;
+            if (playInterval) {
+                clearInterval(playInterval);
+                playInterval = null;
+            }
+            // Clear all animation timeouts
+            animationTimeouts.forEach(timeout => clearTimeout(timeout));
+            animationTimeouts = [];
+            
+            document.querySelectorAll('.step-chip').forEach(chip => {
+                chip.classList.remove('active', 'completed');
             });
-            const data = await response.json();
-            events = data.events;
-            renderInitial(data);
-            playEvents();
+            document.getElementById('play-pause-btn').textContent = '▶ Play';
+            document.getElementById('play-pause-btn').classList.remove('active');
+            document.getElementById('trust-moments').innerHTML = '';
+            highlightedNodes.clear();
+            highlightedEdges.clear();
+            
+            // Reset reasoning trace
+            const traceCheckbox = document.getElementById('trace-checkbox');
+            const traceContent = document.getElementById('reasoning-trace-content');
+            if (traceCheckbox) {
+                traceCheckbox.checked = false;
+            }
+            if (traceContent) {
+                traceContent.classList.remove('active');
+                traceContent.innerHTML = '';
+            }
+            
+            // Clear hypotheses and actions
+            document.getElementById('hypotheses').innerHTML = '';
+            document.getElementById('actions').innerHTML = '';
         }
 
         function renderInitial(data) {
-            // Lab card
-            const labHtml = data.normalized_labs.map(lab => 
-                `<div class="marker ${lab.status}">${lab.marker}: ${lab.value} ${lab.unit} (${lab.status})</div>`
-            ).join('');
-            document.getElementById('lab-card').innerHTML = labHtml;
+            // Render abnormal labs
+            const abnormalLabs = data.normalized_labs.filter(lab => lab.status !== 'NORMAL');
+            const labsHtml = abnormalLabs.map(lab => `
+                <div class="lab-item ${lab.status}" data-marker="${lab.marker}">
+                    <div class="marker-name">${lab.marker}</div>
+                    <div class="lab-value">${lab.value} ${lab.unit} (${lab.status})</div>
+                </div>
+            `).join('');
+            document.getElementById('abnormal-labs').innerHTML = labsHtml;
 
-            // Graph
+            // Build graph with enhanced styling
             const elements = [];
+            const nodeMap = {};
+            
             data.evidence_bundle.subgraph.nodes.forEach(node => {
-                elements.push({ data: { id: node.id, label: node.label, type: node.type } });
-            });
-            data.evidence_bundle.subgraph.edges.forEach(edge => {
-                elements.push({ data: { source: edge.from, target: edge.to, label: edge.relation } });
+                nodeMap[node.id] = node;
+                elements.push({
+                    data: {
+                        id: node.id,
+                        label: node.label,
+                        type: node.type
+                    }
+                });
             });
 
+            data.evidence_bundle.subgraph.edges.forEach(edge => {
+                const source = edge.from_ || edge.from;
+                elements.push({
+                    data: {
+                        id: edge.id,
+                        source: source,
+                        target: edge.to,
+                        label: edge.relation,
+                        relation: edge.relation
+                    }
+                });
+            });
+
+            // Initialize Cytoscape with beautiful styling
             cy = cytoscape({
                 container: document.getElementById('cy'),
                 elements: elements,
                 style: [
-                    { selector: 'node', style: { 'label': 'data(label)', 'text-valign': 'center', 'text-halign': 'center' } },
-                    { selector: 'edge', style: { 'label': 'data(label)', 'curve-style': 'bezier' } }
+                    {
+                        selector: 'node',
+                        style: {
+                            'label': 'data(label)',
+                            'text-valign': 'center',
+                            'text-halign': 'center',
+                            'width': '70px',
+                            'height': '70px',
+                            'background-color': '#e0e0e0',
+                            'color': '#333',
+                            'font-size': '13px',
+                            'font-weight': '600',
+                            'text-wrap': 'wrap',
+                            'text-max-width': '90px',
+                            'border-width': 3,
+                            'border-color': '#999',
+                            'shape': 'round-rectangle',
+                            'transition-property': 'background-color, border-color, width, height, filter, shape',
+                            'transition-duration': '0.4s',
+                            'transition-timing-function': 'cubic-bezier(0.4, 0, 0.2, 1)'
+                        }
+                    },
+                    {
+                        selector: 'node[type="Marker"]',
+                        style: {
+                            'background-color': '#90CAF9',
+                            'border-color': '#1976D2',
+                            'background-opacity': 0.95,
+                            'shape': 'round-rectangle'
+                        }
+                    },
+                    {
+                        selector: 'node[type="Pattern"]',
+                        style: {
+                            'background-color': '#A5D6A7',
+                            'border-color': '#388E3C',
+                            'background-opacity': 0.95,
+                            'shape': 'ellipse'
+                        }
+                    },
+                    {
+                        selector: 'node[type="Condition"]',
+                        style: {
+                            'background-color': '#FFCC80',
+                            'border-color': '#F57C00',
+                            'background-opacity': 0.95,
+                            'shape': 'round-octagon'
+                        }
+                    },
+                    {
+                        selector: 'node[type="Test"]',
+                        style: {
+                            'background-color': '#CE93D8',
+                            'border-color': '#7B1FA2',
+                            'background-opacity': 0.95,
+                            'shape': 'diamond'
+                        }
+                    },
+                    {
+                        selector: 'edge',
+                        style: {
+                            'label': 'data(label)',
+                            'width': 2,
+                            'line-color': '#999',
+                            'target-arrow-color': '#999',
+                            'target-arrow-shape': 'triangle',
+                            'target-arrow-size': '8px',
+                            'curve-style': 'bezier',
+                            'font-size': '10px',
+                            'text-rotation': 'autorotate',
+                            'text-margin-y': -12,
+                            'opacity': 0.5,
+                            'transition-property': 'line-color, width, opacity, target-arrow-color, line-style',
+                            'transition-duration': '0.4s',
+                            'transition-timing-function': 'cubic-bezier(0.4, 0, 0.2, 1)'
+                        }
+                    },
+                    {
+                        selector: 'edge[relation="SUPPORTS"]',
+                        style: {
+                            'line-color': '#4CAF50',
+                            'target-arrow-color': '#4CAF50',
+                            'width': 3,
+                            'opacity': 0.7
+                        }
+                    },
+                    {
+                        selector: 'edge[relation="CONTRADICTS"]',
+                        style: {
+                            'line-color': '#f44336',
+                            'target-arrow-color': '#f44336',
+                            'width': 3,
+                            'opacity': 0.7
+                        }
+                    },
+                    {
+                        selector: 'edge[relation="RECOMMENDS_TEST"]',
+                        style: {
+                            'line-color': '#FF9800',
+                            'target-arrow-color': '#FF9800',
+                            'width': 4,
+                            'line-style': 'dashed',
+                            'opacity': 0.8
+                        }
+                    },
+                    {
+                        selector: 'edge[relation="CAUSES"], edge[relation="INCREASES"], edge[relation="DECREASES"]',
+                        style: {
+                            'line-color': '#2196F3',
+                            'target-arrow-color': '#2196F3',
+                            'width': 3,
+                            'opacity': 0.7
+                        }
+                    },
+                    {
+                        selector: 'node.highlighted',
+                        style: {
+                            'background-color': '#4CAF50',
+                            'border-color': '#2E7D32',
+                            'border-width': 4,
+                            'width': '85px',
+                            'height': '85px',
+                            'z-index': 999
+                        }
+                    },
+                    {
+                        selector: 'edge.highlighted',
+                        style: {
+                            'line-color': '#4CAF50',
+                            'target-arrow-color': '#4CAF50',
+                            'width': 6,
+                            'opacity': 1,
+                            'z-index': 998
+                        }
+                    },
+                    {
+                        selector: 'node.pulsing',
+                        style: {
+                            'background-color': '#66BB6A',
+                            'border-color': '#4CAF50',
+                            'border-width': 5
+                        }
+                    },
+                    {
+                        selector: 'edge.flowing',
+                        style: {
+                            'line-color': '#2196F3',
+                            'target-arrow-color': '#2196F3',
+                            'width': 5
+                        }
+                    }
                 ],
-                layout: { name: 'cose' }
+                layout: {
+                    name: 'cose',
+                    idealEdgeLength: 120,
+                    nodeOverlap: 25,
+                    refresh: 20,
+                    fit: true,
+                    padding: 40,
+                    randomize: false,
+                    componentSpacing: 120,
+                    nodeRepulsion: 4500000,
+                    edgeElasticity: 120,
+                    nestingFactor: 6,
+                    gravity: 0.3,
+                    numIter: 1200,
+                    initialTemp: 250,
+                    coolingFactor: 0.95,
+                    minTemp: 1.5
+                }
             });
 
-            // Hypotheses
-            const hypoHtml = data.reasoner_output.hypotheses.map(h => 
-                `<div><strong>${h.name}</strong> (${h.confidence})</div>`
-            ).join('');
-            document.getElementById('hypotheses').innerHTML = hypoHtml;
+            // Render hypotheses
+            renderHypotheses(data.reasoner_output.hypotheses, data.evidence_bundle);
 
-            // Actions
-            const actionHtml = data.reasoner_output.patient_actions.map(a => 
-                `<div>${a.task}</div>`
-            ).join('');
-            document.getElementById('actions').innerHTML = actionHtml;
+            // Render patient actions
+            renderPatientActions(data.reasoner_output.patient_actions);
+
+            // Extract step durations
+            extractStepDurations();
+            
+            // Update reasoning trace if it was previously visible
+            const traceCheckbox = document.getElementById('trace-checkbox');
+            if (traceCheckbox && traceCheckbox.checked) {
+                renderReasoningTrace();
+            }
+            
+            // Render agent activity (will be called after events are processed)
+            setTimeout(() => renderAgentActivity(), 100);
+        }
+
+        function extractStepDurations() {
+            stepDurations = {};
+            const stepStartTimes = {};
+            
+            events.forEach(event => {
+                if (event.type === 'STEP_START') {
+                    stepStartTimes[event.step] = Date.now();
+                } else if (event.type === 'STEP_END') {
+                    const startTime = stepStartTimes[event.step];
+                    if (startTime && event.payload.duration_ms) {
+                        stepDurations[event.step] = event.payload.duration_ms;
+                        const durationEl = document.getElementById(`duration-${event.step}`);
+                        if (durationEl) {
+                            durationEl.textContent = `(${Math.round(event.payload.duration_ms)}ms)`;
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderHypotheses(hypotheses, evidenceBundle) {
+            if (!hypotheses || hypotheses.length === 0) {
+                document.getElementById('hypotheses').innerHTML = '<div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">No hypotheses generated for this case.</div>';
+                return;
+            }
+            
+            // Sort hypotheses by confidence (descending) if not already sorted
+            const sortedHypotheses = [...hypotheses].sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+            
+            const hypothesesHtml = sortedHypotheses.map((hypo, idx) => {
+                const nextTests = hypo.next_tests || [];
+                const nextTestsList = Array.isArray(nextTests) && nextTests.length > 0 
+                    ? nextTests.map(test => {
+                        const testLabel = typeof test === 'string' ? test : (test.label || test.test_id || test);
+                        return `<li>${testLabel}</li>`;
+                    }).join('')
+                    : '<li>None</li>';
+                
+                // Color code confidence badge
+                const confidence = hypo.confidence || 0;
+                let confidenceClass = 'confidence';
+                if (confidence >= 0.7) {
+                    confidenceClass += ' high-confidence';
+                } else if (confidence >= 0.4) {
+                    confidenceClass += ' medium-confidence';
+                } else {
+                    confidenceClass += ' low-confidence';
+                }
+                
+                // Show evidence count
+                const evidenceCount = (hypo.evidence || []).length;
+                const counterEvidenceCount = (hypo.counter_evidence || []).length;
+                
+                return `
+                    <div class="hypothesis-card" data-hypothesis-id="${hypo.id || idx}" style="order: ${idx};">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                            <h4 style="margin: 0;">${hypo.name}</h4>
+                            <span class="${confidenceClass}">${Math.round(confidence * 100)}%</span>
+                        </div>
+                        ${evidenceCount > 0 || counterEvidenceCount > 0 ? `
+                            <div style="font-size: 11px; color: #6c757d; margin-bottom: 10px;">
+                                ${evidenceCount > 0 ? `<span style="color: #4CAF50;">✓ ${evidenceCount} supporting</span>` : ''}
+                                ${counterEvidenceCount > 0 ? `<span style="color: #f44336; margin-left: 8px;">✗ ${counterEvidenceCount} contradicting</span>` : ''}
+                            </div>
+                        ` : ''}
+                        ${nextTests.length > 0 ? `
+                            <div class="next-tests">
+                                <h5>Recommended Tests:</h5>
+                                <ul>${nextTestsList}</ul>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+            
+            document.getElementById('hypotheses').innerHTML = hypothesesHtml;
+        }
+
+        function renderPatientActions(actions) {
+            if (!actions || actions.length === 0) {
+                document.getElementById('actions').innerHTML = '<div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">No patient actions recommended for this case.</div>';
+                return;
+            }
+            
+            const actionsHtml = actions.map(action => `
+                <div class="action-card">
+                    <div class="task">${action.task}</div>
+                    <div class="why">${action.why || ''}</div>
+                    ${action.risk ? `<span class="risk ${action.risk}">${action.risk} risk</span>` : ''}
+                </div>
+            `).join('');
+            
+            document.getElementById('actions').innerHTML = actionsHtml;
         }
 
         function playEvents() {
-            currentEventIndex = 0;
-            const interval = setInterval(() => {
+            if (isPlaying) return;
+            
+            isPlaying = true;
+            document.getElementById('play-pause-btn').textContent = '⏸ Pause';
+            document.getElementById('play-pause-btn').classList.add('active');
+            
+            playInterval = setInterval(() => {
                 if (currentEventIndex < events.length) {
-                    const event = events[currentEventIndex];
-                    handleEvent(event);
+                    handleEvent(events[currentEventIndex]);
                     currentEventIndex++;
                 } else {
-                    clearInterval(interval);
+                    pauseEvents();
+                    // Finalize graph state after all events complete
+                    setTimeout(() => {
+                        finalizeGraphState();
+                    }, 500);
                 }
-            }, 1000);
+            }, 900);
+        }
+
+        function pauseEvents() {
+            isPlaying = false;
+            if (playInterval) {
+                clearInterval(playInterval);
+                playInterval = null;
+            }
+            document.getElementById('play-pause-btn').textContent = '▶ Play';
+            document.getElementById('play-pause-btn').classList.remove('active');
+        }
+
+        function togglePlayPause() {
+            if (isPlaying) {
+                pauseEvents();
+            } else {
+                playEvents();
+            }
+        }
+
+        function replay() {
+            currentEventIndex = 0;
+            resetUI();
+            // Reset graph to initial state with smooth fade
+            if (cy) {
+                cy.nodes().style({
+                    'background-color': null,
+                    'border-color': null,
+                    'border-width': null,
+                    'width': null,
+                    'height': null
+                }).removeClass('highlighted pulsing');
+                cy.edges().style({
+                    'line-color': null,
+                    'target-arrow-color': null,
+                    'width': null,
+                    'opacity': null
+                }).removeClass('highlighted flowing');
+            }
+            document.getElementById('trust-moments').innerHTML = '';
+            document.querySelectorAll('.lab-item').forEach(item => {
+                item.classList.remove('pulse');
+            });
+            document.querySelectorAll('.step-chip').forEach(chip => {
+                chip.classList.remove('active', 'completed');
+            });
+            playEvents();
+        }
+
+        function jumpToEnd() {
+            pauseEvents();
+            currentEventIndex = events.length;
+            events.forEach(event => handleEvent(event));
+            document.querySelectorAll('.step-chip').forEach(chip => {
+                chip.classList.add('completed');
+                chip.classList.remove('active');
+            });
+            // Finalize graph state after all events
+            setTimeout(() => {
+                finalizeGraphState();
+            }, 500);
         }
 
         function handleEvent(event) {
             const step = event.step;
-            document.querySelector(`[data-step="${step}"]`).classList.add('active');
-
-            if (event.type === 'HIGHLIGHT') {
-                cy.nodes().style('background-color', '#ccc');
-                cy.edges().style('line-color', '#ccc');
-                event.payload.node_ids.forEach(id => cy.getElementById(id).style('background-color', 'red'));
-                event.payload.edge_ids.forEach(id => cy.getElementById(id).style('line-color', 'red'));
+            const type = event.type;
+            
+            updateTimeline(step, type);
+            
+            switch (type) {
+                case 'HIGHLIGHT':
+                    handleHighlight(event);
+                    break;
+                case 'GUARDRAIL_FAIL':
+                    handleGuardrailFail(event);
+                    break;
+                case 'GUARDRAIL_PATCH_APPLIED':
+                    handleGuardrailPatch(event);
+                    break;
+                case 'HYPOTHESIS_READY':
+                    handleHypothesisReady(event);
+                    break;
+                case 'CANDIDATES':
+                    handleCandidates(event);
+                    break;
+                case 'EVIDENCE_APPLIED':
+                    handleEvidenceApplied(event);
+                    break;
             }
         }
 
-        function showTab(tab) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.getElementById(tab).classList.add('active');
+        function updateTimeline(step, type) {
+            const chip = document.querySelector(`[data-step="${step}"]`);
+            if (!chip) return;
+            
+            if (type === 'STEP_START') {
+                chip.classList.add('active');
+                chip.classList.remove('completed');
+            } else if (type === 'STEP_END') {
+                chip.classList.remove('active');
+                chip.classList.add('completed');
+            }
         }
 
-        // Load cases on load
-        window.onload = async () => {
-            await loadCases();
-            loadSelectedCase();
-        };
+        function handleHighlight(event) {
+            const payload = event.payload || {};
+            const nodeIds = payload.node_ids || [];
+            const edgeIds = payload.edge_ids || [];
+            
+            // Smooth fade out previous highlights
+            highlightedNodes.forEach(id => {
+                const node = cy.getElementById(id);
+                if (node.length) {
+                    node.animate({
+                        style: {
+                            'background-color': null,
+                            'border-color': null,
+                            'border-width': 3,
+                            'width': '70px',
+                            'height': '70px'
+                        }
+                    }, {
+                        duration: 400,
+                        easing: 'ease-out'
+                    });
+                    node.removeClass('highlighted pulsing');
+                }
+            });
+            
+            highlightedEdges.forEach(id => {
+                const edge = cy.getElementById(id);
+                if (edge.length) {
+                    edge.animate({
+                        style: {
+                            'line-color': null,
+                            'target-arrow-color': null,
+                            'width': 2,
+                            'opacity': 0.6
+                        }
+                    }, {
+                        duration: 400,
+                        easing: 'ease-out'
+                    });
+                    edge.removeClass('highlighted flowing');
+                }
+            });
+            
+            highlightedNodes.clear();
+            highlightedEdges.clear();
+            
+            // Animate new highlights with beautiful effects
+            nodeIds.forEach((id, index) => {
+                const node = cy.getElementById(id);
+                if (node.length) {
+                    // Stagger animation for multiple nodes
+                    const timeout = setTimeout(() => {
+                        node.addClass('highlighted');
+                        node.animate({
+                            style: {
+                                'background-color': '#4CAF50',
+                                'border-color': '#2E7D32',
+                                'border-width': 5,
+                                'width': '90px',
+                                'height': '90px'
+                            }
+                        }, {
+                            duration: 600,
+                            easing: 'ease-out'
+                        });
+                        
+                        // Add pulsing effect
+                        setTimeout(() => {
+                            node.addClass('pulsing');
+                            // Remove pulsing after animation
+                            setTimeout(() => node.removeClass('pulsing'), 2000);
+                        }, 600);
+                    }, index * 100);
+                    animationTimeouts.push(timeout);
+                    highlightedNodes.add(id);
+                }
+            });
+            
+            edgeIds.forEach((id, index) => {
+                const edge = cy.getElementById(id);
+                if (edge.length) {
+                    const timeout = setTimeout(() => {
+                        edge.addClass('highlighted');
+                        edge.animate({
+                            style: {
+                                'line-color': '#4CAF50',
+                                'target-arrow-color': '#4CAF50',
+                                'width': 7,
+                                'opacity': 1
+                            }
+                        }, {
+                            duration: 600,
+                            easing: 'ease-out'
+                        });
+                        
+                        // Add flowing effect
+                        setTimeout(() => {
+                            edge.addClass('flowing');
+                            setTimeout(() => edge.removeClass('flowing'), 2000);
+                        }, 600);
+                    }, (nodeIds.length * 100) + (index * 150));
+                    animationTimeouts.push(timeout);
+                    highlightedEdges.add(id);
+                }
+            });
+            
+            // Pulse lab items
+            if (nodeIds.length > 0 && pipelineData) {
+                const markerNodeIds = pipelineData.case_card?.abnormal_marker_node_ids || [];
+                nodeIds.forEach((nodeId, idx) => {
+                    if (markerNodeIds.includes(nodeId)) {
+                        const markerNode = pipelineData.evidence_bundle.subgraph.nodes.find(n => n.id === nodeId);
+                        if (markerNode) {
+                            const labItem = document.querySelector(`[data-marker="${markerNode.label}"]`);
+                            if (labItem) {
+                                setTimeout(() => {
+                                    labItem.classList.add('pulse');
+                                    setTimeout(() => labItem.classList.remove('pulse'), 2000);
+                                }, idx * 100);
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function handleGuardrailFail(event) {
+            const payload = event.payload || {};
+            const failedRules = payload.failed_rules || [];
+            
+            const trustMoments = document.getElementById('trust-moments');
+            const failCard = document.createElement('div');
+            failCard.className = 'trust-moment guardrail-fail';
+            
+            let rulesHtml = '';
+            if (failedRules.length > 0) {
+                rulesHtml = failedRules.map(rule => {
+                    const ruleId = rule.id || rule.rule_id || 'Unknown';
+                    const message = rule.message || 'Guardrail check failed';
+                    return `
+                        <div style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 6px;">
+                            <div class="rule-id">Rule: ${ruleId}</div>
+                            <div class="message">${message}</div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                rulesHtml = '<div class="message">Guardrail check failed</div>';
+            }
+            
+            failCard.innerHTML = `
+                <h4>⚠️ Guardrail Failed</h4>
+                ${rulesHtml}
+            `;
+            trustMoments.appendChild(failCard);
+            
+            setTimeout(() => {
+                failCard.style.animation = 'slideInRight 0.4s ease-out reverse';
+                setTimeout(() => failCard.remove(), 400);
+            }, 10000);
+        }
+
+        function handleGuardrailPatch(event) {
+            const payload = event.payload || {};
+            const before = payload.before;
+            const after = payload.after;
+            
+            if (!before || !after) return;
+            
+            const trustMoments = document.getElementById('trust-moments');
+            const patchCard = document.createElement('div');
+            patchCard.className = 'trust-moment patch-diff';
+            
+            const diffHtml = createDiffHtml(before, after);
+            
+            patchCard.innerHTML = `
+                <h4>🔧 Patch Applied</h4>
+                ${diffHtml}
+            `;
+            trustMoments.appendChild(patchCard);
+            
+            setTimeout(() => {
+                patchCard.style.animation = 'slideInRight 0.4s ease-out reverse';
+                setTimeout(() => patchCard.remove(), 400);
+            }, 15000);
+        }
+
+        function createDiffHtml(before, after) {
+            if (Array.isArray(before) && Array.isArray(after)) {
+                const removed = before.filter(b => !after.some(a => JSON.stringify(a) === JSON.stringify(b)));
+                const added = after.filter(a => !before.some(b => JSON.stringify(b) === JSON.stringify(a)));
+                
+                let html = '';
+                if (removed.length > 0) {
+                    html += `
+                        <div class="diff-section">
+                            <h5>Removed:</h5>
+                            ${removed.map(item => `
+                                <div class="diff-before">- ${JSON.stringify(item, null, 2)}</div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+                if (added.length > 0) {
+                    html += `
+                        <div class="diff-section">
+                            <h5>Added:</h5>
+                            ${added.map(item => `
+                                <div class="diff-after">+ ${JSON.stringify(item, null, 2)}</div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+                return html || '<div class="diff-section">No visible changes</div>';
+            }
+            
+            return `
+                <div class="diff-section">
+                    <h5>Before:</h5>
+                    <div class="diff-before">${JSON.stringify(before, null, 2)}</div>
+                </div>
+                <div class="diff-section">
+                    <h5>After:</h5>
+                    <div class="diff-after">${JSON.stringify(after, null, 2)}</div>
+                </div>
+            `;
+        }
+
+        function handleHypothesisReady(event) {
+            const payload = event.payload || {};
+            const edgeIds = payload.edge_ids || [];
+            
+            if (edgeIds.length > 0 && cy) {
+                edgeIds.forEach((edgeId, idx) => {
+                    const edge = cy.getElementById(edgeId);
+                    if (edge.length) {
+                        setTimeout(() => {
+                            edge.animate({
+                                style: {
+                                    'line-color': '#FF9800',
+                                    'target-arrow-color': '#FF9800',
+                                    'width': 6,
+                                    'opacity': 1
+                                }
+                            }, {
+                                duration: 500,
+                                easing: 'ease-out'
+                            });
+                            setTimeout(() => {
+                                edge.animate({
+                                    style: {
+                                        'line-color': null,
+                                        'target-arrow-color': null,
+                                        'width': null,
+                                        'opacity': null
+                                    }
+                                }, {
+                                    duration: 500,
+                                    easing: 'ease-in'
+                                });
+                            }, 3000);
+                        }, idx * 200);
+                    }
+                });
+            }
+        }
+
+        function handleCandidates(event) {
+            console.log('Candidates:', event.payload);
+        }
+
+        function handleEvidenceApplied(event) {
+            const payload = event.payload || {};
+            const edgeId = payload.highlight_edge_id || payload.edge_id;
+            
+            if (edgeId && cy) {
+                const edge = cy.getElementById(edgeId);
+                if (edge.length) {
+                    edge.animate({
+                        style: {
+                            'line-color': '#2196F3',
+                            'target-arrow-color': '#2196F3',
+                            'width': 5,
+                            'opacity': 1
+                        }
+                    }, {
+                        duration: 400,
+                        easing: 'ease-out'
+                    });
+                    setTimeout(() => {
+                        edge.animate({
+                            style: {
+                                'line-color': null,
+                                'target-arrow-color': null,
+                                'width': null,
+                                'opacity': null
+                            }
+                        }, {
+                            duration: 400,
+                            easing: 'ease-in'
+                        });
+                    }, 2500);
+                }
+            }
+        }
+
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            document.querySelector(`.tab-button[onclick="showTab('${tabName}')"]`).classList.add('active');
+            document.getElementById(tabName).classList.add('active');
+        }
+
+        function toggleReasoningTrace(event) {
+            // Prevent event bubbling if called from checkbox click
+            if (event) {
+                event.stopPropagation();
+            }
+            
+            const checkbox = document.getElementById('trace-checkbox');
+            const content = document.getElementById('reasoning-trace-content');
+            
+            // Toggle checkbox state
+            checkbox.checked = !checkbox.checked;
+            
+            if (checkbox.checked) {
+                content.classList.add('active');
+                renderReasoningTrace();
+            } else {
+                content.classList.remove('active');
+            }
+        }
+
+        // Handle checkbox click separately
+        document.addEventListener('DOMContentLoaded', function() {
+            const checkbox = document.getElementById('trace-checkbox');
+            if (checkbox) {
+                checkbox.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleReasoningTrace(e);
+                });
+            }
+        });
+
+        function renderReasoningTrace() {
+            if (!pipelineData) {
+                const traceContent = document.getElementById('reasoning-trace-content');
+                if (traceContent) {
+                    traceContent.innerHTML = '<div style="padding: 12px; color: #6c757d; font-size: 12px;">No case data loaded. Please load a case first.</div>';
+                }
+                return;
+            }
+            
+            const evidenceBundle = pipelineData.evidence_bundle;
+            const traceContent = document.getElementById('reasoning-trace-content');
+            const events = pipelineData.events || [];
+            
+            if (!evidenceBundle) {
+                if (traceContent) {
+                    traceContent.innerHTML = '<div style="padding: 12px; color: #6c757d; font-size: 12px;">No evidence bundle available.</div>';
+                }
+                return;
+            }
+            
+            let html = '';
+            
+            // Show model usage if available
+            const modelUsage = pipelineData.model_usage;
+            if (modelUsage && modelUsage.model_mode) {
+                html += '<div style="margin-bottom: 16px; padding: 12px; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 8px; border-left: 4px solid #2196F3;">';
+                html += '<h5 style="font-size: 13px; font-weight: 700; color: #1976D2; margin-bottom: 8px;">🤖 Model Usage</h5>';
+                html += `<div style="font-size: 12px; color: #424242;">Model calls: ${modelUsage.model_calls || 0} | Agent decisions: ${modelUsage.agent_decisions || 0}</div>`;
+                html += '</div>';
+            }
+            
+            // Show model reasoning from events
+            const modelEvents = events.filter(e => e.type === 'MODEL_CALLED' && e.payload.status === 'success');
+            if (modelEvents.length > 0) {
+                html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">Model Reasoning:</h5>';
+                modelEvents.forEach((event, idx) => {
+                    const agentType = event.payload.agent_type || 'unknown';
+                    const responseTime = event.payload.response_time_ms ? `${Math.round(event.payload.response_time_ms)}ms` : 'N/A';
+                    const cached = event.payload.cached ? ' (cached)' : '';
+                    html += `
+                        <div class="evidence-item" style="border-left-color: #2196F3;">
+                            <strong>${agentType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</strong>
+                            <div class="edge-id">Response time: ${responseTime}${cached}</div>
+                        </div>
+                    `;
+                });
+            }
+            
+            // Show agent decisions
+            const agentDecisions = events.filter(e => e.type === 'AGENT_DECISION');
+            if (agentDecisions.length > 0) {
+                html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">Agent Decisions:</h5>';
+                agentDecisions.forEach((event, idx) => {
+                    const agentType = event.payload.agent_type || 'unknown';
+                    const decision = event.payload.decision || 'unknown';
+                    const rationale = event.payload.rationale || '';
+                    const decisionColor = decision === 'use_model' ? '#4CAF50' : '#9E9E9E';
+                    html += `
+                        <div class="evidence-item" style="border-left-color: ${decisionColor};">
+                            <strong>${agentType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</strong>: 
+                            <span style="color: ${decisionColor}; font-weight: 600;">${decision === 'use_model' ? 'Using Model' : 'Using Rules'}</span>
+                            ${rationale ? `<div class="edge-id">${rationale}</div>` : ''}
+                        </div>
+                    `;
+                });
+            }
+            
+            // Show candidate scores if available
+            if (evidenceBundle.candidate_scores && Object.keys(evidenceBundle.candidate_scores).length > 0) {
+                html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">Pattern Scores:</h5>';
+                const scores = Object.entries(evidenceBundle.candidate_scores)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([pattern, score]) => {
+                        const percentage = Math.round(score * 100);
+                        return `
+                            <div class="evidence-item" style="border-left-color: #667eea;">
+                                <strong>${pattern}</strong>: ${percentage}% confidence
+                            </div>
+                        `;
+                    }).join('');
+                html += scores;
+            }
+            
+            // Show top discriminators
+            if (evidenceBundle.top_discriminators && evidenceBundle.top_discriminators.length > 0) {
+                html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">Key Evidence Items:</h5>';
+                evidenceBundle.top_discriminators.forEach(item => {
+                    const relation = item.relation || 'SUPPORTS';
+                    const borderColor = relation === 'SUPPORTS' ? '#4CAF50' : '#f44336';
+                    html += `
+                        <div class="evidence-item" style="border-left-color: ${borderColor};">
+                            <strong>${item.marker}</strong> (${item.marker_status}) 
+                            <span style="color: ${borderColor}; font-weight: 600;">${relation}</span> 
+                            ${item.pattern_id}
+                            <div class="edge-id">Edge: ${item.edge_id} | Weight: ${item.weight?.toFixed(2) || 'N/A'}</div>
+                        </div>
+                    `;
+                });
+            }
+            
+            if (evidenceBundle.supports && evidenceBundle.supports.length > 0) {
+                html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">All Supporting Evidence:</h5>';
+                evidenceBundle.supports.forEach(item => {
+                    html += `
+                        <div class="evidence-item">
+                            <strong>${item.marker}</strong> (${item.marker_status}) → ${item.pattern_id}
+                            <div class="edge-id">Edge: ${item.edge_id}</div>
+                        </div>
+                    `;
+                });
+            }
+            
+            if (evidenceBundle.contradictions && evidenceBundle.contradictions.length > 0) {
+                html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">All Contradicting Evidence:</h5>';
+                evidenceBundle.contradictions.forEach(item => {
+                    html += `
+                        <div class="evidence-item" style="border-left-color: #f44336;">
+                            <strong>${item.marker}</strong> (${item.marker_status}) → ${item.pattern_id}
+                            <div class="edge-id">Edge: ${item.edge_id}</div>
+                        </div>
+                    `;
+                });
+            }
+            
+            // Show raw model output if available
+            if (pipelineData.reasoner_output && pipelineData.reasoner_output.raw_model_output) {
+                html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">Raw Model Output:</h5>';
+                html += `<div class="evidence-item" style="border-left-color: #9E9E9E; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 200px; overflow-y: auto;">${pipelineData.reasoner_output.raw_model_output.substring(0, 500)}${pipelineData.reasoner_output.raw_model_output.length > 500 ? '...' : ''}</div>`;
+            }
+            
+            if (!html) {
+                html = '<div style="padding: 12px; color: #6c757d; font-size: 12px;">No reasoning trace data available for this case.</div>';
+            }
+            
+            if (traceContent) {
+                traceContent.innerHTML = html;
+            }
+        }
+
+        function toggleLegend() {
+            const legend = document.getElementById('graph-legend');
+            const content = document.getElementById('legend-content');
+            const toggle = document.getElementById('legend-toggle');
+            
+            if (legend.classList.contains('collapsed')) {
+                legend.classList.remove('collapsed');
+                content.style.display = 'block';
+                toggle.textContent = '−';
+            } else {
+                legend.classList.add('collapsed');
+                content.style.display = 'none';
+                toggle.textContent = '+';
+            }
+        }
+
+        function toggleAgentActivity() {
+            const panel = document.getElementById('agent-activity');
+            const content = document.getElementById('agent-content');
+            const toggle = document.getElementById('agent-toggle');
+            
+            if (panel.style.display === 'none') {
+                panel.style.display = 'block';
+                toggle.textContent = '−';
+                renderAgentActivity();
+            } else {
+                panel.style.display = 'none';
+                toggle.textContent = '+';
+            }
+        }
+
+        function renderAgentActivity() {
+            if (!pipelineData || !pipelineData.events) return;
+            
+            const events = pipelineData.events;
+            const agentDecisions = events.filter(e => e.type === 'AGENT_DECISION');
+            const modelCalls = events.filter(e => e.type === 'MODEL_CALLED' && e.payload.status === 'success');
+            
+            const content = document.getElementById('agent-content');
+            let html = '';
+            
+            if (agentDecisions.length === 0 && modelCalls.length === 0) {
+                html = '<div style="padding: 12px; color: #6c757d; font-size: 12px; text-align: center;">No agent activity (lite mode)</div>';
+            } else {
+                // Group decisions by agent type
+                const decisionsByAgent = {};
+                agentDecisions.forEach(decision => {
+                    const agentType = decision.payload.agent_type;
+                    if (!decisionsByAgent[agentType]) {
+                        decisionsByAgent[agentType] = [];
+                    }
+                    decisionsByAgent[agentType].push(decision);
+                });
+                
+                // Show each agent's activity
+                Object.keys(decisionsByAgent).forEach(agentType => {
+                    const decisions = decisionsByAgent[agentType];
+                    const lastDecision = decisions[decisions.length - 1];
+                    const decision = lastDecision.payload.decision;
+                    const rationale = lastDecision.payload.rationale || '';
+                    const modelCall = modelCalls.find(m => m.payload.agent_type === agentType);
+                    
+                    const isModelUsed = decision === 'use_model' && modelCall;
+                    const responseTime = modelCall ? `${Math.round(modelCall.payload.response_time_ms || 0)}ms` : '';
+                    const cached = modelCall && modelCall.payload.cached ? ' (cached)' : '';
+                    
+                    html += `
+                        <div class="agent-call-item ${isModelUsed ? '' : 'rule-based'}">
+                            <h6>
+                                <span class="agent-type">${agentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+                            </h6>
+                            <div style="font-size: 11px; color: ${isModelUsed ? '#1976D2' : '#616161'}; font-weight: 600;">
+                                ${isModelUsed ? '🤖 Using Model' : '📋 Using Rules'}
+                            </div>
+                            ${responseTime ? `<div class="agent-time">Response: ${responseTime}${cached}</div>` : ''}
+                            ${rationale ? `<div class="agent-rationale">${rationale}</div>` : ''}
+                        </div>
+                    `;
+                });
+            }
+            
+            content.innerHTML = html;
+            
+            // Show panel if there's activity
+            if (agentDecisions.length > 0 || modelCalls.length > 0) {
+                document.getElementById('agent-activity').style.display = 'block';
+            }
+        }
+
+        // Keep final state clear after animation completes
+        function finalizeGraphState() {
+            if (!cy) return;
+            
+            // Remove all animation classes but keep type-based styling
+            cy.nodes().removeClass('highlighted pulsing');
+            cy.edges().removeClass('highlighted flowing');
+            
+            // Ensure all nodes have their type-based colors visible
+            cy.nodes().forEach(node => {
+                const type = node.data('type');
+                if (type) {
+                    node.style({
+                        'opacity': 1,
+                        'background-opacity': 0.95
+                    });
+                }
+            });
+            
+            // Ensure all edges have their relation-based colors visible
+            cy.edges().forEach(edge => {
+                const relation = edge.data('relation');
+                if (relation) {
+                    edge.style({
+                        'opacity': 0.7
+                    });
+                }
+            });
+        }
+
+        window.onload = init;
     </script>
 </body>
-</html></content>
-</xai:function_call">To create a fancy interactive UI, I've built `frontend/index.html` with Cytoscape for graph visualization. It includes:
-
-- **Timeline bar**: Step-by-step progress with active indicators
-- **Left panel**: Lab card with color-coded markers
-- **Center**: Interactive Cytoscape graph showing knowledge subgraph
-- **Right tabs**: Clinician hypotheses and patient actions
-
-The UI fetches case data from the backend and animates through events, highlighting graph elements as the reasoning progresses. Open `frontend/index.html` in a browser to see the interactive demo.
+</html>

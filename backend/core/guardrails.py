@@ -1,5 +1,9 @@
 import yaml
 import os
+import json
+from .model_manager import model_manager
+from .agent_manager import agent_manager
+from .events import Step
 
 with open(os.path.join(os.path.dirname(__file__), '..', 'guardrails', 'guardrails.yml'), 'r') as f:
     GUARDRAILS = yaml.safe_load(f)['rules']
@@ -8,7 +12,7 @@ ALLOWED_BUCKETS = [
     "tests", "scheduling", "questions for clinician", "low-risk defaults"
 ]
 
-def check_guardrails(reasoner_output, case_card, normalized_labs):
+def check_guardrails(reasoner_output, case_card, normalized_labs, events_list=None):
     failed_rules = []
     patches = []
 
@@ -46,8 +50,46 @@ def check_guardrails(reasoner_output, case_card, normalized_labs):
                 patches.append({"op": "remove", "path": f"/hypotheses/{h_idx}/evidence/{e_idx}"})
 
     status = "FAIL" if failed_rules else "PASS"
+    
+    # If guardrails failed and model is available, generate explanations
+    explanations = []
+    if status == "FAIL" and not model_manager.lite_mode:
+        try:
+            for failed_rule in failed_rules:
+                rule_id = failed_rule.get('id', 'Unknown')
+                rule_message = failed_rule.get('message', '')
+                
+                guardrail_agent_data = {
+                    "rule_id": rule_id,
+                    "rule_message": rule_message,
+                    "triggered_action_json": json.dumps(reasoner_output.get('patient_actions', []), indent=2),
+                    "hypotheses_json": json.dumps(reasoner_output.get('hypotheses', []), indent=2),
+                    "case_card_json": json.dumps(case_card, indent=2),
+                    "patient_context_json": json.dumps(case_card.get('patient_context', {}), indent=2)
+                }
+                
+                guardrail_agent_response = agent_manager.call_agent(
+                    'guardrail_explanation',
+                    {'guardrail_failed': True, 'failed_rules': failed_rules},
+                    guardrail_agent_data,
+                    events_list=events_list,
+                    step=Step.GUARDRAILS
+                )
+                
+                if guardrail_agent_response.get('use_model') and guardrail_agent_response.get('result'):
+                    explanations.append({
+                        "rule_id": rule_id,
+                        "explanation": guardrail_agent_response['result'].get('explanation', ''),
+                        "risk_level": guardrail_agent_response['result'].get('risk_level', 'medium'),
+                        "alternative_actions": guardrail_agent_response['result'].get('alternative_actions', [])
+                    })
+        except Exception as e:
+            # Continue without explanations if agent fails
+            pass
+    
     return {
         "status": status,
         "failed_rules": failed_rules,
-        "patches": patches
+        "patches": patches,
+        "explanations": explanations
     }

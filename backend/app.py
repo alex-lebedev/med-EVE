@@ -1,9 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import json
 import os
-from .core import lab_normalizer, context_selector, evidence_builder, reasoner_medgemma, guardrails, events
-from .core.model_manager import model_manager
+from core import lab_normalizer, context_selector, evidence_builder, reasoner_medgemma, guardrails, events
+from core.model_manager import model_manager
+
+class RunRequest(BaseModel):
+    case_id: str
 
 # Load cases
 def load_cases():
@@ -41,8 +45,8 @@ def get_case(case_id: str):
     return cases.get(case_id)
 
 @app.post("/run")
-def run_pipeline(body: dict, mode: str = "lite"):
-    case_id = body['case_id']
+def run_pipeline(body: RunRequest, mode: str = "lite"):
+    case_id = body.case_id
     case = cases[case_id]
     events_list = []
 
@@ -53,7 +57,7 @@ def run_pipeline(body: dict, mode: str = "lite"):
 
     # CONTEXT_SELECT
     events.start_step(events_list, events.Step.CONTEXT_SELECT)
-    case_card, subgraph = context_selector.select_context(normalized_labs, case['patient']['context'])
+    case_card, subgraph = context_selector.select_context(normalized_labs, case['patient']['context'], events_list)
     events.highlight(events_list, events.Step.CONTEXT_SELECT, [n['id'] for n in subgraph['nodes']], [e['id'] for e in subgraph['edges']], "Context subgraph")
     events.end_step(events_list, events.Step.CONTEXT_SELECT)
 
@@ -64,12 +68,12 @@ def run_pipeline(body: dict, mode: str = "lite"):
 
     # REASON
     events.start_step(events_list, events.Step.REASON)
-    reasoner_output = reasoner_medgemma.reason(case_card, evidence_bundle)
+    reasoner_output = reasoner_medgemma.reason(case_card, evidence_bundle, events_list)
     events.end_step(events_list, events.Step.REASON)
 
     # GUARDRAILS
     events.start_step(events_list, events.Step.GUARDRAILS)
-    guardrail_report = guardrails.check_guardrails(reasoner_output, case_card, normalized_labs)
+    guardrail_report = guardrails.check_guardrails(reasoner_output, case_card, normalized_labs, events_list)
     if guardrail_report['status'] == 'FAIL':
         events.guardrail_fail(events_list, events.Step.GUARDRAILS, guardrail_report['failed_rules'])
         before = reasoner_output.copy()
@@ -91,6 +95,10 @@ def run_pipeline(body: dict, mode: str = "lite"):
 
     events.final_ready(events_list)
 
+    # Track model usage statistics
+    model_calls = [e for e in events_list if e.type == 'MODEL_CALLED']
+    agent_decisions = [e for e in events_list if e.type == 'AGENT_DECISION']
+    
     return {
         "normalized_labs": normalized_labs,
         "case_card": case_card,
@@ -98,7 +106,12 @@ def run_pipeline(body: dict, mode: str = "lite"):
         "reasoner_output": reasoner_output,
         "guardrail_report": guardrail_report,
         "events": events_list,
-        "timings": {}
+        "timings": {},
+        "model_usage": {
+            "model_calls": len(model_calls),
+            "agent_decisions": len(agent_decisions),
+            "model_mode": not model_manager.lite_mode
+        }
     }
 
 @app.get("/health")

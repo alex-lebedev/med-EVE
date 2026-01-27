@@ -35,7 +35,6 @@
 - `python evals/run_evals.py` → Eval summary
 
 ## Key Takeaways
-
 - Safe, auditable reasoning pipeline
 - Knowledge graph drives evidence
 - Guardrails prevent unsafe recommendations

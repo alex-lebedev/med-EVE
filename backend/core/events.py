@@ -21,6 +21,9 @@ class EventType(str, Enum):
     GUARDRAIL_FAIL = "GUARDRAIL_FAIL"
     GUARDRAIL_PATCH_APPLIED = "GUARDRAIL_PATCH_APPLIED"
     FINAL_READY = "FINAL_READY"
+    MODEL_CALLED = "MODEL_CALLED"
+    AGENT_DECISION = "AGENT_DECISION"
+    MODEL_WEIGHT_ASSIGNED = "MODEL_WEIGHT_ASSIGNED"
 
 class Event(BaseModel):
     ts: float
@@ -68,3 +71,35 @@ def guardrail_patch_applied(events, step, before, after):
 
 def final_ready(events):
     emit_event(events, Step.FINAL, EventType.FINAL_READY)
+
+def model_called(events, step, agent_type, prompt_type=None, response_time_ms=0, status="success", cached=False, error=None):
+    """Emit event when model is called"""
+    payload = {
+        "agent_type": agent_type,
+        "prompt_type": prompt_type or agent_type,
+        "response_time_ms": response_time_ms,
+        "status": status,
+        "cached": cached
+    }
+    if error:
+        payload["error"] = str(error)
+    emit_event(events, step, EventType.MODEL_CALLED, payload)
+
+def agent_decision(events, step, agent_type, decision, rationale):
+    """Emit event for agent decision (use model vs. rules)"""
+    emit_event(events, step, EventType.AGENT_DECISION, {
+        "agent_type": agent_type,
+        "decision": decision,  # "use_model" or "use_rules"
+        "rationale": rationale
+    })
+
+def model_weight_assigned(events, step, marker, status, relation, pattern_id, weight, rationale):
+    """Emit event when model assigns weight to evidence"""
+    emit_event(events, step, EventType.MODEL_WEIGHT_ASSIGNED, {
+        "marker": marker,
+        "status": status,
+        "relation": relation,
+        "pattern_id": pattern_id,
+        "weight": weight,
+        "rationale": rationale
+    })

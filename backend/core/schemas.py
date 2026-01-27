@@ -41,8 +41,8 @@ class EvidenceBundle(BaseModel):
     supports: List[EvidenceItem]
     contradictions: List[EvidenceItem]
     allowed_claims: List[str]
-
 class GuardrailReport(BaseModel):
     status: str
     failed_rules: List[dict]
     auto_fixes: List[dict]
+    explanations: Optional[List[dict]] = []

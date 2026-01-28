@@ -131,7 +131,7 @@ See [LICENSE](LICENSE) for details.
 ## Citation
 
 If you use this code, please cite:
-```
-Aletheia: Medical AI Reasoning with Knowledge Graphs and Guardrails
-MedGemma Impact Challenge Submission
-```
+
+**Alexander Lebedev MD PhD and Luigi Espasiano MD** (Function Health)
+
+*Aletheia: Medical AI Reasoning with Knowledge Graphs and Guardrails* — MedGemma Impact Challenge Submission.

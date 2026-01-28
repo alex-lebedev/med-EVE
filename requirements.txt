@@ -14,3 +14,5 @@ transformers>=4.35.0
 huggingface_hub>=0.19.0
 # Optional: For quantization (reduces memory usage on GPU)
 bitsandbytes>=0.41.0
+# Optional: For device_map="auto" (helps with multi-GPU, but not required for MPS/CPU)
+accelerate>=0.20.0

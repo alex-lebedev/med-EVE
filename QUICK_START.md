@@ -1,35 +1,104 @@
 # Quick Start Guide
 
-## For Demo Recording (2 minutes)
+## Step 1: Run Setup Script
 
-1. **Clone and setup** (30 seconds):
-   ```bash
-   git clone <repo-url>
-   cd aletheia-demo
-   pip install fastapi uvicorn pydantic pyyaml
-   ```
+```bash
+cd path/to/aletheia-demo   # or wherever you cloned the repo
+./setup.sh
+```
 
-2. **Run demo** (10 seconds):
-   ```bash
-   make demo
-   ```
+This will:
+- Create a Python virtual environment
+- Install all dependencies
+- Set everything up
 
-3. **Record** (90 seconds):
-   - Browser opens automatically to gotcha case
-   - Demo auto-plays
-   - Follow DEMO_SCRIPT.md for narration
+## Step 2: Activate Virtual Environment
 
-That's it! The demo is ready to record.
+Every time you open a new terminal:
 
-## Manual Commands
+```bash
+cd path/to/aletheia-demo   # same as above
+source venv/bin/activate
+```
 
-- `make run` - Start backend only
-- `make demo` - Start backend + frontend + open browser
-- `make stop` - Stop all servers
-- `make verify` - Run tests
+You should see `(venv)` in your prompt.
+
+## Step 3: Test in Lite Mode (No Model Needed)
+
+```bash
+make demo
+```
+
+This runs without the model - perfect for testing the setup!
+
+## Step 4: Set Up Model Mode (Optional)
+
+If you want to use the actual MedGemma model:
+
+### 4a. Login to HuggingFace
+
+```bash
+huggingface-cli login
+```
+
+Get your token from: https://huggingface.co/settings/tokens
+
+### 4b. Accept Model Terms
+
+Visit: https://huggingface.co/google/medgemma-4b-it
+Click "Agree and access repository"
+
+### 4c. Download Model
+
+```bash
+python scripts/download_model.py
+```
+
+This downloads ~8GB and takes 10-30 minutes.
+
+### 4d. Run with Model
+
+```bash
+export MODE=model
+make demo
+```
+
+## Common Commands
+
+```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Run demo (lite mode)
+make demo
+
+# Run demo (model mode)
+export MODE=model
+make demo
+
+# Run backend only
+make run
+
+# Run tests
+make verify
+
+# Stop servers
+make stop
+```
 
 ## Troubleshooting
 
-- **Backend not starting**: Check port 8000 is free
-- **Frontend not loading**: Check port 8080 is free
-- **Browser not opening**: Manually open http://localhost:8080/index.html?case=case_02_anemia_of_inflammation_gotcha&autoplay=true
+**"pip: command not found"**
+- Use `pip3` instead, or activate venv first: `source venv/bin/activate`
+
+**"Permission denied"**
+- Don't use `sudo` with pip in virtual environment
+- Make sure venv is activated
+
+**Import errors**
+- Activate virtual environment: `source venv/bin/activate`
+- Reinstall: `pip install -r requirements.txt`
+
+## Full Documentation
+
+See `SETUP_COMPLETE_GUIDE.md` for detailed instructions.

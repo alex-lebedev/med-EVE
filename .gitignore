@@ -44,3 +44,7 @@ logs/
 *.tmp
 *.temp
 .cache/
+
+# Models directory (large files; only README.md is tracked)
+models/*
+!models/README.md

@@ -71,6 +71,55 @@
             color: white;
         }
 
+        /* Model Status Indicator */
+        #model-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        #model-status.active {
+            background: rgba(76, 175, 80, 0.3);
+            border-color: rgba(76, 175, 80, 0.5);
+        }
+
+        #model-status.lite {
+            background: rgba(158, 158, 158, 0.2);
+            border-color: rgba(158, 158, 158, 0.3);
+        }
+
+        #model-status .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4CAF50;
+        }
+
+        #model-status.lite .status-dot {
+            background: #9E9E9E;
+        }
+
+        #model-status.loading {
+            background: rgba(255, 193, 7, 0.25);
+            border-color: rgba(255, 193, 7, 0.5);
+        }
+
+        #model-status.loading .status-dot {
+            background: #FFC107;
+            animation: model-status-pulse 1.2s ease-in-out infinite;
+        }
+
+        @keyframes model-status-pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.1); }
+        }
+
         /* Timeline */
         #timeline {
             background: white;
@@ -902,6 +951,10 @@
     <!-- Header -->
     <div id="header">
         <h1>🧬 Aletheia Medical AI</h1>
+        <div id="model-status" class="lite" title="Click to check model status">
+            <span class="status-dot"></span>
+            <span id="model-status-text">Lite Mode</span>
+        </div>
         <button id="demo-mode-btn" onclick="runDemoMode()">🎬 Demo Mode</button>
         <div id="case-selector">
             <label for="case-select">Case:</label>
@@ -1016,6 +1069,8 @@
             <div class="tab-buttons">
                 <button class="tab-button active" onclick="showTab('clinician')">Clinician</button>
                 <button class="tab-button" onclick="showTab('patient')">Patient</button>
+                <button class="tab-button" onclick="showTab('guidance')">Guidance</button>
+                <button class="tab-button" onclick="showTab('next-steps')">Next Steps</button>
             </div>
             <div id="clinician" class="tab-content active">
                 <h3>Hypotheses</h3>
@@ -1031,6 +1086,22 @@
             <div id="patient" class="tab-content">
                 <h3>Patient Actions</h3>
                 <div id="actions"></div>
+            </div>
+            <div id="guidance" class="tab-content">
+                <h3>Step-by-Step Guidance</h3>
+                <div id="guidance-content">
+                    <div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">
+                        Load a case to see step-by-step guidance
+                    </div>
+                </div>
+            </div>
+            <div id="next-steps" class="tab-content">
+                <h3>Recommended Next Steps</h3>
+                <div id="next-steps-content">
+                    <div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">
+                        Load a case to see recommended next steps
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -1051,11 +1122,96 @@
         let animationTimeouts = [];
 
         const API_BASE = 'http://localhost:8000';
+        let modelHealth = null;
+
+        // Check model status
+        async function checkModelStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                if (response.ok) {
+                    modelHealth = await response.json();
+                    updateModelStatusIndicator();
+                }
+            } catch (error) {
+                console.error('Failed to check model status:', error);
+                modelHealth = null;
+                updateModelStatusIndicator();
+            }
+        }
+        
+        // Add click handler for model status
+        document.addEventListener('DOMContentLoaded', function() {
+            const statusEl = document.getElementById('model-status');
+            if (statusEl) {
+                statusEl.addEventListener('click', function() {
+                    checkModelStatus();
+                });
+                statusEl.style.cursor = 'pointer';
+            }
+        });
+
+        function getModelTypeDisplay(modelName) {
+            if (!modelName) return 'MedGemma';
+            const parts = String(modelName).split('/');
+            return parts[parts.length - 1] || modelName;
+        }
+
+        function updateModelStatusIndicator() {
+            const statusEl = document.getElementById('model-status');
+            const textEl = document.getElementById('model-status-text');
+            const modelType = modelHealth ? getModelTypeDisplay(modelHealth.model_name) : '';
+
+            if (!modelHealth) {
+                statusEl.className = 'lite';
+                textEl.textContent = 'Lite Mode';
+                statusEl.title = 'Model status unknown - click to refresh';
+                return;
+            }
+
+            // Loading: MODE=model and model is currently loading
+            if (modelHealth.model_loading) {
+                statusEl.className = 'loading';
+                textEl.textContent = 'Model loading. Please wait..';
+                statusEl.title = `Model: ${modelType}\nLoading in progress. Pipeline will start when ready.\nClick to refresh`;
+                return;
+            }
+
+            // Loaded: model is active
+            if (modelHealth.model_loaded && !modelHealth.lite_mode) {
+                statusEl.className = 'active';
+                const device = modelHealth.device || 'CPU';
+                textEl.textContent = `Model Active (${device}) · ${modelType}`;
+                statusEl.title = `Model: ${modelType}\nDevice: ${device}\nCache: ${modelHealth.cache_size || 0} entries\nClick to refresh`;
+                return;
+            }
+
+            // Model mode set but not loaded yet (e.g. load failed or not started)
+            if (!modelHealth.lite_mode && !modelHealth.model_loaded) {
+                statusEl.className = 'loading';
+                textEl.textContent = 'Model mode · waiting for model..';
+                statusEl.title = `Model: ${modelType}\nModel mode enabled. Load in progress or will start on first run.\nClick to refresh`;
+                return;
+            }
+
+            // Lite mode
+            statusEl.className = 'lite';
+            textEl.textContent = 'Lite Mode';
+            const device = modelHealth.device || 'unknown';
+            statusEl.title = `Using rule-based reasoning (no model).\nDevice: ${device}\n\nTo enable model:\n1. Stop the backend\n2. Run: export MODE=model\n3. Restart the backend\n\nClick to refresh status`;
+        }
 
         // Initialize
         async function init() {
             try {
+                await checkModelStatus();
                 await loadCases();
+                
+                // If MODE=model and model is loading, wait for it before auto-running so UI shows loading state
+                if (modelHealth && !modelHealth.lite_mode && (modelHealth.model_loading || !modelHealth.model_loaded)) {
+                    updateModelStatusIndicator();
+                    await waitForModelReady();
+                    await checkModelStatus();
+                }
                 
                 // Check URL parameters for auto-load and autoplay
                 const urlParams = new URLSearchParams(window.location.search);
@@ -1109,11 +1265,33 @@
 
         async function loadSelectedCase() {
             const caseId = document.getElementById('case-select').value;
-            await runCase(caseId);
+            await runCase(caseId, true);  // Auto-play by default when loading
         }
 
         async function runDemoMode() {
             await runCase('case_02_anemia_of_inflammation_gotcha', true);
+        }
+
+        const MODEL_READY_POLL_MS = 500;
+        const MODEL_READY_TIMEOUT_MS = 310000; // Slightly above backend 300s
+
+        async function waitForModelReady() {
+            const start = Date.now();
+            while (Date.now() - start < MODEL_READY_TIMEOUT_MS) {
+                const res = await fetch(`${API_BASE}/health`);
+                if (!res.ok) throw new Error('Health check failed');
+                const health = await res.json();
+                modelHealth = health;
+                updateModelStatusIndicator();
+                if (health.model_loading) {
+                    await new Promise(r => setTimeout(r, MODEL_READY_POLL_MS));
+                    continue;
+                }
+                if (health.lite_mode) return;
+                if (health.model_loaded) return;
+                await new Promise(r => setTimeout(r, MODEL_READY_POLL_MS));
+            }
+            throw new Error('Model did not become ready in time. Check server logs.');
         }
 
         async function runCase(caseId, autoPlay = false) {
@@ -1122,6 +1300,31 @@
                 
                 // Show loading state
                 document.getElementById('hypotheses').innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">Loading case...</div>';
+                
+                // When model mode, wait for model to be ready before calling /run
+                const healthRes = await fetch(`${API_BASE}/health`).catch(() => null);
+                if (healthRes && healthRes.ok) {
+                    const health = await healthRes.json();
+                    modelHealth = health;
+                    updateModelStatusIndicator();
+                    if (!health.lite_mode && (health.model_loading || !health.model_loaded)) {
+                        document.getElementById('hypotheses').innerHTML = '<div style="padding: 20px; text-align: center; color: #856404;">Model loading. Please wait..</div>';
+                        const demoBtn = document.getElementById('demo-mode-btn');
+                        const loadBtn = document.querySelector('#case-selector button');
+                        const caseSelect = document.getElementById('case-select');
+                        if (demoBtn) demoBtn.disabled = true;
+                        if (loadBtn) loadBtn.disabled = true;
+                        if (caseSelect) caseSelect.disabled = true;
+                        try {
+                            await waitForModelReady();
+                        } finally {
+                            if (demoBtn) demoBtn.disabled = false;
+                            if (loadBtn) loadBtn.disabled = false;
+                            if (caseSelect) caseSelect.disabled = false;
+                        }
+                        document.getElementById('hypotheses').innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">Loading case...</div>';
+                    }
+                }
                 
                 const response = await fetch(`${API_BASE}/run`, {
                     method: 'POST',
@@ -1141,6 +1344,9 @@
                 
                 events = pipelineData.events || [];
                 
+                // Refresh health check immediately after a run to get accurate model status
+                await checkModelStatus();
+                
                 renderInitial(pipelineData);
                 
                 if (autoPlay) {
@@ -1150,12 +1356,16 @@
                 }
             } catch (error) {
                 console.error('Failed to run case:', error);
+                const is503 = error.message && error.message.includes('503');
+                const msg = is503
+                    ? 'Model did not finish loading in time. Please try again or check server logs.'
+                    : error.message;
                 document.getElementById('hypotheses').innerHTML = `<div style="padding: 20px; text-align: center; color: #f44336;">
                     <strong>Error loading case</strong><br>
-                    ${error.message}<br>
+                    ${msg}<br>
                     <small>Make sure the backend is running on http://localhost:8000</small>
                 </div>`;
-                alert(`Failed to load case: ${error.message}\n\nMake sure the backend is running on http://localhost:8000`);
+                alert(`Failed to load case: ${msg}\n\nMake sure the backend is running on http://localhost:8000`);
             }
         }
 
@@ -1428,6 +1638,10 @@
             
             // Render agent activity (will be called after events are processed)
             setTimeout(() => renderAgentActivity(), 100);
+            
+            // Render guidance and next steps
+            renderGuidance(data);
+            renderNextSteps(data);
         }
 
         function extractStepDurations() {
@@ -1464,30 +1678,49 @@
                 const nextTestsList = Array.isArray(nextTests) && nextTests.length > 0 
                     ? nextTests.map(test => {
                         const testLabel = typeof test === 'string' ? test : (test.label || test.test_id || test);
-                        return `<li>${testLabel}</li>`;
+                        const testRationale = typeof test === 'object' && test.rationale ? ` <span style="font-size: 10px; color: #666; font-style: italic;">(${test.rationale})</span>` : '';
+                        return `<li>${testLabel}${testRationale}</li>`;
                     }).join('')
                     : '<li>None</li>';
                 
                 // Color code confidence badge
                 const confidence = hypo.confidence || 0;
                 let confidenceClass = 'confidence';
+                let confidenceLabel = '';
                 if (confidence >= 0.7) {
                     confidenceClass += ' high-confidence';
+                    confidenceLabel = 'Very likely';
                 } else if (confidence >= 0.4) {
                     confidenceClass += ' medium-confidence';
+                    confidenceLabel = 'Possible';
                 } else {
                     confidenceClass += ' low-confidence';
+                    confidenceLabel = 'Unlikely';
                 }
                 
                 // Show evidence count
                 const evidenceCount = (hypo.evidence || []).length;
                 const counterEvidenceCount = (hypo.counter_evidence || []).length;
                 
+                // What would change my mind
+                const changeMind = hypo.what_would_change_my_mind || [];
+                const changeMindHtml = changeMind.length > 0 ? `
+                    <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; border-left: 3px solid #667eea;">
+                        <div style="font-size: 11px; font-weight: 600; color: #667eea; margin-bottom: 6px;">What would change my mind:</div>
+                        <ul style="margin: 0; padding-left: 18px; font-size: 11px; color: #495057; line-height: 1.5;">
+                            ${changeMind.map(item => `<li>${item}</li>`).join('')}
+                        </ul>
+                    </div>
+                ` : '';
+                
                 return `
                     <div class="hypothesis-card" data-hypothesis-id="${hypo.id || idx}" style="order: ${idx};">
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                             <h4 style="margin: 0;">${hypo.name}</h4>
-                            <span class="${confidenceClass}">${Math.round(confidence * 100)}%</span>
+                            <div style="display: flex; flex-direction: column; align-items: flex-end;">
+                                <span class="${confidenceClass}">${Math.round(confidence * 100)}%</span>
+                                <span style="font-size: 9px; color: #999; margin-top: 2px;">${confidenceLabel}</span>
+                            </div>
                         </div>
                         ${evidenceCount > 0 || counterEvidenceCount > 0 ? `
                             <div style="font-size: 11px; color: #6c757d; margin-bottom: 10px;">
@@ -1496,11 +1729,12 @@
                             </div>
                         ` : ''}
                         ${nextTests.length > 0 ? `
-                            <div class="next-tests">
-                                <h5>Recommended Tests:</h5>
-                                <ul>${nextTestsList}</ul>
+                            <div class="next-tests" style="margin-bottom: 10px;">
+                                <h5 style="font-size: 12px; font-weight: 600; color: #495057; margin-bottom: 6px;">Recommended Tests:</h5>
+                                <ul style="margin: 0; padding-left: 18px; font-size: 11px; color: #495057; line-height: 1.5;">${nextTestsList}</ul>
                             </div>
                         ` : ''}
+                        ${changeMindHtml}
                     </div>
                 `;
             }).join('');
@@ -1514,15 +1748,213 @@
                 return;
             }
             
-            const actionsHtml = actions.map(action => `
-                <div class="action-card">
-                    <div class="task">${action.task}</div>
-                    <div class="why">${action.why || ''}</div>
-                    ${action.risk ? `<span class="risk ${action.risk}">${action.risk} risk</span>` : ''}
-                </div>
-            `).join('');
+            // Sort by risk level (high -> medium -> low)
+            const riskOrder = { 'high': 0, 'medium': 1, 'low': 2, 'none': 3 };
+            const sortedActions = [...actions].sort((a, b) => {
+                const aRisk = riskOrder[a.risk] ?? 3;
+                const bRisk = riskOrder[b.risk] ?? 3;
+                return aRisk - bRisk;
+            });
+            
+            const actionsHtml = sortedActions.map(action => {
+                const bucket = action.bucket || 'general';
+                const bucketLabels = {
+                    'immediate': 'Immediate',
+                    'short_term': 'Short-term',
+                    'monitoring': 'Monitoring',
+                    'lifestyle': 'Lifestyle',
+                    'general': 'General'
+                };
+                return `
+                    <div class="action-card" style="margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 6px;">
+                            <div class="task" style="flex: 1;">${action.task}</div>
+                            ${action.risk ? `<span class="risk ${action.risk}" style="margin-left: 8px;">${action.risk} risk</span>` : ''}
+                        </div>
+                        ${action.why ? `<div class="why" style="font-size: 12px; color: #666; margin-bottom: 6px;">${action.why}</div>` : ''}
+                        ${bucket !== 'general' ? `<div style="font-size: 10px; color: #999; font-style: italic;">Category: ${bucketLabels[bucket] || bucket}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
             
             document.getElementById('actions').innerHTML = actionsHtml;
+        }
+
+        function renderGuidance(data) {
+            const guidanceContent = document.getElementById('guidance-content');
+            if (!data || !data.events) {
+                guidanceContent.innerHTML = '<div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">Load a case to see step-by-step guidance</div>';
+                return;
+            }
+            
+            const events = data.events || [];
+            const stepExplanations = {
+                'LAB_NORMALIZE': {
+                    title: 'Lab Normalization',
+                    description: 'Converting raw lab values into standardized formats and identifying abnormal values that need attention.',
+                    icon: '🔬'
+                },
+                'CONTEXT_SELECT': {
+                    title: 'Context Selection',
+                    description: 'Identifying relevant medical patterns and conditions from the knowledge graph based on abnormal lab values.',
+                    icon: '🎯'
+                },
+                'EVIDENCE_SCORE': {
+                    title: 'Evidence Scoring',
+                    description: 'Evaluating how strongly each piece of evidence supports or contradicts potential diagnoses.',
+                    icon: '⚖️'
+                },
+                'REASON': {
+                    title: 'Reasoning',
+                    description: 'Generating diagnostic hypotheses by combining evidence scores with medical knowledge.',
+                    icon: '🧠'
+                },
+                'GUARDRAILS': {
+                    title: 'Safety Guardrails',
+                    description: 'Checking recommendations against safety rules to prevent harmful actions.',
+                    icon: '🛡️'
+                },
+                'FINAL': {
+                    title: 'Final Output',
+                    description: 'Compiling final recommendations with safety checks applied.',
+                    icon: '✅'
+                }
+            };
+            
+            let html = '';
+            const completedSteps = new Set();
+            events.forEach(event => {
+                if (event.type === 'STEP_END') {
+                    completedSteps.add(event.step);
+                }
+            });
+            
+            Object.keys(stepExplanations).forEach(step => {
+                const info = stepExplanations[step];
+                const isCompleted = completedSteps.has(step);
+                const isActive = events.some(e => e.step === step && e.type === 'STEP_START' && !completedSteps.has(step));
+                
+                html += `
+                    <div style="margin-bottom: 16px; padding: 12px; background: ${isCompleted ? '#e8f5e9' : isActive ? '#e3f2fd' : '#f5f5f5'}; border-radius: 8px; border-left: 4px solid ${isCompleted ? '#4CAF50' : isActive ? '#2196F3' : '#ccc'};">
+                        <div style="display: flex; align-items: center; margin-bottom: 6px;">
+                            <span style="font-size: 18px; margin-right: 8px;">${info.icon}</span>
+                            <h4 style="margin: 0; font-size: 14px; font-weight: 600; color: #333;">${info.title}</h4>
+                            ${isCompleted ? '<span style="margin-left: auto; color: #4CAF50; font-size: 12px;">✓ Complete</span>' : isActive ? '<span style="margin-left: auto; color: #2196F3; font-size: 12px;">In progress...</span>' : ''}
+                        </div>
+                        <div style="font-size: 12px; color: #666; line-height: 1.5;">${info.description}</div>
+                    </div>
+                `;
+            });
+            
+            // Add gotcha case explanation if applicable
+            const caseId = data.case_card?.case_id || '';
+            if (caseId.includes('gotcha') || caseId.includes('inflammation')) {
+                html += `
+                    <div style="margin-top: 20px; padding: 14px; background: #fff3e0; border-radius: 8px; border-left: 4px solid #FF9800;">
+                        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600; color: #e65100;">⚠️ Important: Anemia of Inflammation Case</h4>
+                        <div style="font-size: 12px; color: #424242; line-height: 1.6;">
+                            <p style="margin: 0 0 8px 0;">This case demonstrates a common diagnostic challenge: <strong>high ferritin levels during inflammation</strong> can mask iron deficiency.</p>
+                            <p style="margin: 0 0 8px 0;">The system detected that iron supplementation would be unsafe because:</p>
+                            <ul style="margin: 0 0 8px 0; padding-left: 20px;">
+                                <li>Ferritin is an acute-phase reactant (increases during inflammation)</li>
+                                <li>Supplementing iron during active inflammation can worsen the condition</li>
+                                <li>The underlying inflammation must be addressed first</li>
+                            </ul>
+                            <p style="margin: 0; font-weight: 600; color: #e65100;">The guardrail system automatically removed the unsafe iron supplementation recommendation.</p>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            guidanceContent.innerHTML = html;
+        }
+
+        function renderNextSteps(data) {
+            const nextStepsContent = document.getElementById('next-steps-content');
+            if (!data || !data.reasoner_output) {
+                nextStepsContent.innerHTML = '<div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">Load a case to see recommended next steps</div>';
+                return;
+            }
+            
+            const hypotheses = data.reasoner_output.hypotheses || [];
+            const actions = data.reasoner_output.patient_actions || [];
+            
+            let html = '';
+            
+            // Priority tests
+            const allTests = [];
+            hypotheses.forEach(hypo => {
+                (hypo.next_tests || []).forEach(test => {
+                    const testName = typeof test === 'string' ? test : (test.label || test.test_id || test);
+                    if (!allTests.includes(testName)) {
+                        allTests.push(testName);
+                    }
+                });
+            });
+            
+            if (allTests.length > 0) {
+                html += `
+                    <div style="margin-bottom: 16px; padding: 12px; background: #e3f2fd; border-radius: 8px; border-left: 4px solid #2196F3;">
+                        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600; color: #1976D2;">🔬 Priority Tests</h4>
+                        <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #424242; line-height: 1.6;">
+                            ${allTests.map(test => `<li>${test}</li>`).join('')}
+                        </ul>
+                        <div style="margin-top: 8px; font-size: 11px; color: #666; font-style: italic;">Order these tests to help confirm or rule out the top hypotheses.</div>
+                    </div>
+                `;
+            }
+            
+            // Monitoring recommendations
+            const monitoringActions = actions.filter(a => a.bucket === 'monitoring' || (a.task && a.task.toLowerCase().includes('monitor')));
+            if (monitoringActions.length > 0) {
+                html += `
+                    <div style="margin-bottom: 16px; padding: 12px; background: #fff3e0; border-radius: 8px; border-left: 4px solid #FF9800;">
+                        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600; color: #e65100;">📊 Monitoring</h4>
+                        <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #424242; line-height: 1.6;">
+                            ${monitoringActions.map(a => `<li>${a.task}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+            
+            // Follow-up timing
+            const topHypothesis = hypotheses[0];
+            if (topHypothesis) {
+                const confidence = topHypothesis.confidence || 0;
+                let followUpTiming = '';
+                if (confidence >= 0.7) {
+                    followUpTiming = 'Schedule follow-up in 1-2 weeks to assess treatment response.';
+                } else if (confidence >= 0.4) {
+                    followUpTiming = 'Schedule follow-up in 2-4 weeks after diagnostic tests are completed.';
+                } else {
+                    followUpTiming = 'Consider follow-up in 4-6 weeks or sooner if symptoms worsen.';
+                }
+                
+                html += `
+                    <div style="margin-bottom: 16px; padding: 12px; background: #f3e5f5; border-radius: 8px; border-left: 4px solid #9C27B0;">
+                        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600; color: #7B1FA2;">📅 Follow-up Timing</h4>
+                        <div style="font-size: 12px; color: #424242; line-height: 1.6;">${followUpTiming}</div>
+                    </div>
+                `;
+            }
+            
+            // Safety note if guardrails were applied
+            if (data.guardrail_report && data.guardrail_report.failed_rules && data.guardrail_report.failed_rules.length > 0) {
+                html += `
+                    <div style="margin-bottom: 16px; padding: 12px; background: #ffebee; border-radius: 8px; border-left: 4px solid #f44336;">
+                        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600; color: #c62828;">🛡️ Safety Note</h4>
+                        <div style="font-size: 12px; color: #424242; line-height: 1.6;">
+                            The system automatically removed unsafe recommendations. Review the "Guidance" tab for details about what was blocked and why.
+                        </div>
+                    </div>
+                `;
+            }
+            
+            if (!html) {
+                html = '<div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">No specific next steps available for this case.</div>';
+            }
+            
+            nextStepsContent.innerHTML = html;
         }
 
         function playEvents() {
@@ -1821,10 +2253,59 @@
             const patchCard = document.createElement('div');
             patchCard.className = 'trust-moment patch-diff';
             
+            // Get guardrail explanations from pipeline data if available
+            const guardrailReport = pipelineData?.guardrail_report;
+            const explanations = guardrailReport?.explanations || [];
+            
+            // Create human-readable explanation
+            let explanationHtml = '';
+            if (explanations.length > 0) {
+                explanations.forEach(expl => {
+                    explanationHtml += `
+                        <div style="margin-bottom: 12px; padding: 12px; background: rgba(255,255,255,0.7); border-radius: 6px; border-left: 3px solid #FF9800;">
+                            <div style="font-weight: 600; color: #e65100; margin-bottom: 6px;">Safety Check: ${expl.rule_id || 'Guardrail'}</div>
+                            <div style="font-size: 13px; line-height: 1.5; color: #424242; margin-bottom: 8px;">${expl.explanation || 'An unsafe recommendation was automatically removed.'}</div>
+                            ${expl.risk_level ? `<div style="font-size: 11px; color: #666; margin-bottom: 6px;"><strong>Risk Level:</strong> ${expl.risk_level}</div>` : ''}
+                            ${expl.alternative_actions && expl.alternative_actions.length > 0 ? `
+                                <div style="margin-top: 8px;">
+                                    <div style="font-size: 11px; font-weight: 600; color: #666; margin-bottom: 4px;">Safe Alternatives:</div>
+                                    <ul style="margin: 0; padding-left: 20px; font-size: 11px; color: #424242;">
+                                        ${expl.alternative_actions.map(alt => `<li>${typeof alt === 'string' ? alt : alt.action || alt}</li>`).join('')}
+                                    </ul>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                });
+            } else {
+                // Fallback: create explanation from diff
+                const removedActions = before.patient_actions?.filter(b => 
+                    !after.patient_actions?.some(a => JSON.stringify(a) === JSON.stringify(b))
+                ) || [];
+                
+                if (removedActions.length > 0) {
+                    const action = removedActions[0];
+                    explanationHtml = `
+                        <div style="margin-bottom: 12px; padding: 12px; background: rgba(255,255,255,0.7); border-radius: 6px; border-left: 3px solid #FF9800;">
+                            <div style="font-weight: 600; color: #e65100; margin-bottom: 6px;">Safety Check: Unsafe Action Removed</div>
+                            <div style="font-size: 13px; line-height: 1.5; color: #424242; margin-bottom: 8px;">
+                                The system detected and automatically removed an unsafe recommendation: 
+                                <strong>"${action.task || 'Unsafe action'}"</strong>
+                            </div>
+                            <div style="font-size: 11px; color: #666;">This action was blocked by safety guardrails to prevent potential harm to the patient.</div>
+                        </div>
+                    `;
+                }
+            }
+            
             const diffHtml = createDiffHtml(before, after);
             
             patchCard.innerHTML = `
-                <h4>🔧 Patch Applied</h4>
+                <h4>🔧 Safety Patch Applied</h4>
+                ${explanationHtml}
+                <div style="margin-top: 12px; font-size: 11px; color: #666; font-style: italic;">
+                    The system automatically removed unsafe recommendations. See details below.
+                </div>
                 ${diffHtml}
             `;
             trustMoments.appendChild(patchCard);
@@ -1832,10 +2313,51 @@
             setTimeout(() => {
                 patchCard.style.animation = 'slideInRight 0.4s ease-out reverse';
                 setTimeout(() => patchCard.remove(), 400);
-            }, 15000);
+            }, 20000); // Keep visible longer for important safety info
         }
 
         function createDiffHtml(before, after) {
+            // Handle patient_actions array specifically
+            if (before.patient_actions && after.patient_actions) {
+                const removed = before.patient_actions.filter(b => 
+                    !after.patient_actions.some(a => JSON.stringify(a) === JSON.stringify(b))
+                );
+                const added = after.patient_actions.filter(a => 
+                    !before.patient_actions.some(b => JSON.stringify(b) === JSON.stringify(a))
+                );
+                
+                let html = '';
+                if (removed.length > 0) {
+                    html += `
+                        <div class="diff-section">
+                            <h5>Removed (Unsafe Actions):</h5>
+                            ${removed.map(item => `
+                                <div class="diff-before" style="margin-bottom: 8px;">
+                                    <div style="font-weight: 600; margin-bottom: 4px;">- ${item.task || 'Action'}</div>
+                                    ${item.why ? `<div style="font-size: 10px; opacity: 0.8;">Reason: ${item.why}</div>` : ''}
+                                    ${item.bucket ? `<div style="font-size: 10px; opacity: 0.8;">Category: ${item.bucket}</div>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+                if (added.length > 0) {
+                    html += `
+                        <div class="diff-section">
+                            <h5>Added (Safe Alternatives):</h5>
+                            ${added.map(item => `
+                                <div class="diff-after" style="margin-bottom: 8px;">
+                                    <div style="font-weight: 600; margin-bottom: 4px;">+ ${item.task || 'Action'}</div>
+                                    ${item.why ? `<div style="font-size: 10px; opacity: 0.8;">Reason: ${item.why}</div>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+                return html || '<div class="diff-section" style="font-size: 11px; color: #666;">No changes to patient actions</div>';
+            }
+            
+            // Generic array handling
             if (Array.isArray(before) && Array.isArray(after)) {
                 const removed = before.filter(b => !after.some(a => JSON.stringify(a) === JSON.stringify(b)));
                 const added = after.filter(a => !before.some(b => JSON.stringify(b) === JSON.stringify(a)));

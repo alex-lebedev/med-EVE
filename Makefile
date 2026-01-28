@@ -1,4 +1,4 @@
-.PHONY: verify test evals help run demo stop
+.PHONY: verify test evals help run demo stop model-demo
 
 # Default target
 help:
@@ -8,6 +8,7 @@ help:
 	@echo "  evals   - Run evaluation script only"
 	@echo "  run     - Start backend server only"
 	@echo "  demo    - Start backend + frontend and open browser (auto-play gotcha case)"
+	@echo "  model-demo - Start demo with model enabled (MODE=model)"
 	@echo "  stop    - Stop all running servers"
 
 # Run both pytest and evals
@@ -29,6 +30,12 @@ run:
 	@echo "Starting backend server..."
 	@echo "Backend will be available at http://localhost:8000"
 	@echo "API docs at http://localhost:8000/docs"
+	@if [ -z "$$MODE" ]; then \
+		echo "⚠️  Running in LITE mode (rule-based only)"; \
+		echo "   To enable model: export MODE=model && make run"; \
+	else \
+		echo "✓ MODE=$$MODE detected"; \
+	fi
 	@echo "Press Ctrl+C to stop"
 	@cd backend && export PYTHONPATH=$$(pwd) && python -m uvicorn app:app --host 0.0.0.0 --port 8000
 
@@ -50,7 +57,13 @@ demo:
 	@-lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 	@sleep 2
 	@ROOT_DIR=$$(pwd); \
-	cd $$ROOT_DIR/backend && export PYTHONPATH=$$ROOT_DIR/backend && python -m uvicorn app:app --host 0.0.0.0 --port 8000 > /tmp/backend.log 2>&1 & \
+	if [ -z "$$MODE" ]; then \
+		echo "⚠️  Running in LITE mode (rule-based only)"; \
+		echo "   To enable model: export MODE=model && make demo"; \
+	else \
+		echo "✓ MODE=$$MODE detected - model will be enabled"; \
+	fi; \
+	cd $$ROOT_DIR/backend && export PYTHONPATH=$$ROOT_DIR/backend && export MODE=$$MODE && python -m uvicorn app:app --host 0.0.0.0 --port 8000 > /tmp/backend.log 2>&1 & \
 	BACKEND_PID=$$!; \
 	echo "Backend starting (PID: $$BACKEND_PID)..."; \
 	sleep 4; \
@@ -90,6 +103,11 @@ demo:
 		fi; \
 		sleep 2; \
 	done
+
+# Start demo with model enabled
+model-demo:
+	@echo "Starting Aletheia Demo with MODEL enabled..."
+	@export MODE=model && $(MAKE) demo
 
 # Stop all servers (find and kill processes)
 stop:

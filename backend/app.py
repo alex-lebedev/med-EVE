@@ -24,6 +24,26 @@ cases = load_cases()
 
 app = FastAPI()
 
+# Try to pre-load model if MODE=model is set (in background to not block server)
+import threading
+
+def preload_model():
+    """Pre-load model in background thread"""
+    if os.getenv("MODE", "lite").lower() == "model":
+        try:
+            print("🔄 Pre-loading model (MODE=model detected)...")
+            model_manager.load_model()
+            if model_manager.model_loaded:
+                print("✅ Model pre-loaded successfully!")
+            else:
+                print("⚠️  Model pre-load attempted but not loaded (will try on first use)")
+        except Exception as e:
+            print(f"⚠️  Model pre-load failed (will load on first use): {e}")
+
+# Start model loading in background thread (non-blocking)
+model_thread = threading.Thread(target=preload_model, daemon=True)
+model_thread.start()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -49,6 +69,16 @@ def run_pipeline(body: RunRequest, mode: str = "lite"):
     case_id = body.case_id
     case = cases[case_id]
     events_list = []
+
+    # When MODE=model, block until model is loaded before running pipeline
+    if os.getenv("MODE", "lite").lower() == "model":
+        try:
+            model_manager.wait_for_model(timeout=300.0)
+        except TimeoutError as e:
+            raise HTTPException(
+                status_code=503,
+                detail="Model did not finish loading. Please try again or check server logs.",
+            ) from e
 
     # LAB_NORMALIZE
     events.start_step(events_list, events.Step.LAB_NORMALIZE)

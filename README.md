@@ -141,10 +141,20 @@ See [models/README.md](models/README.md) if you want to put a model in the repo 
 Downloaded models live in the HuggingFace cache, not in the repo. To see what’s there and how much space it uses:
 
 ```bash
-huggingface-cli scan-cache
+hf cache scan
 ```
 
-This lists each cached repo (e.g. `models--google--medgemma-4b-it`, `models--google--medgemma-27b-text-it`) and their size. You can then remove specific cached models via the Hub CLI or Python API if you need to free space; see [HuggingFace cache docs](https://huggingface.co/docs/huggingface_hub/guides/manage-cache).
+(This replaces the deprecated `huggingface-cli scan-cache`.)
+
+This lists each cached repo (e.g. `models--google--medgemma-4b-it`, `models--google--medgemma-27b-text-it`) and their size. You can then remove specific cached models via the Hub CLI if you need to free space; see [HuggingFace cache docs](https://huggingface.co/docs/huggingface_hub/guides/manage-cache).
+
+**If the scan shows 0 repos:** The app uses `HF_CACHE_DIR` (default `~/.cache/huggingface`). The Hub CLI uses `HF_HOME` for its default. To scan the same location the app uses, run:
+
+```bash
+HF_HOME=~/.cache/huggingface hf cache scan
+```
+
+or, if you set a custom cache when running the app: `HF_HOME=/path/you/used hf cache scan`. Also, if a download was interrupted or never completed, the cache may be empty or partial; run the app again with `MODE=model` and let the download finish, then scan again.
 
 ## Agentic Architecture
 

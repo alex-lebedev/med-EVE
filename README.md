@@ -60,6 +60,8 @@ huggingface-cli login
 make demo
 ```
 
+For detailed setup (from scratch, different models, where files go, switching modes), see **Running modes and models** below.
+
 This will:
 - Start backend on http://localhost:8000
 - Start frontend on http://localhost:8080
@@ -77,6 +79,72 @@ make run
 ```bash
 make verify
 ```
+
+## Running modes and models
+
+### Modes
+
+- **Lite (default)** – No model; rule-based only. No download, works offline.  
+  Run: `make demo` (no env vars).
+- **Model** – Uses MedGemma for agentic reasoning. Needs GPU (or patience on CPU).  
+  Run: `export MODE=model` then `make demo`.  
+  First time the app will download the model; later runs reuse the cache.
+
+### Supported models
+
+Set before `make demo` (only applies when `MODE=model`):
+
+| Model | Env / default | Notes |
+|-------|----------------|------|
+| **4B** | `google/medgemma-4b-it` (default) | Smaller, faster. No env needed, or `export MEDGEMMA_MODEL=google/medgemma-4b-it` |
+| **27B** | `export MEDGEMMA_MODEL=google/medgemma-27b-text-it` | Larger, more capable; longer download and load |
+
+### Where the model comes from
+
+1. **Repo `models/` folder** – If you have placed a model in the repo under `models/<model-id>/` (e.g. `models/medgemma-4b-it/` or `models/medgemma-27b-text-it/`) with `config.json` and weight files, Aletheia loads from there.
+2. **HuggingFace cache** – Otherwise the app downloads from HuggingFace on first use and caches under `~/.cache/huggingface` (or `$HF_CACHE_DIR`). It does **not** copy downloads into `models/`; the cache is the single copy.
+
+See [models/README.md](models/README.md) if you want to put a model in the repo for a self-contained setup.
+
+### Minimum steps from scratch (model mode)
+
+1. **Clone and install**
+   ```bash
+   git clone <repo-url>
+   cd aletheia-demo
+   pip install -r requirements.txt
+   ```
+
+2. **HuggingFace access (required for gated models)**  
+   Log in and accept the model terms:
+   ```bash
+   huggingface-cli login
+   ```
+   Then open the model page on the Hub and accept the terms (e.g. [medgemma-4b-it](https://huggingface.co/google/medgemma-4b-it), [medgemma-27b-text-it](https://huggingface.co/google/medgemma-27b-text-it)).
+
+3. **Choose model and run**
+   - **4B:** `export MODE=model && make demo`
+   - **27B:** `export MODE=model && export MEDGEMMA_MODEL=google/medgemma-27b-text-it && make demo`
+
+4. **First run** – The backend will log “Loading model from HuggingFace…” and download (can take 30+ minutes for 27B). The progress bar may stay at 0% for a while; you can confirm activity with `huggingface-cli scan-cache` or by watching `~/.cache/huggingface`.
+
+5. **When ready** – The backend logs “Model loaded successfully!” and the UI shows model status. You can also call `GET /health` and check `model_loaded` and `lite_mode`.
+
+### Switching between lite and model / between models
+
+- **Lite → model:** `export MODE=model` (and optionally `MEDGEMMA_MODEL=...`), then `make demo`.
+- **Model A → model B:** Set `MEDGEMMA_MODEL` to the other model, restart (`make stop` then `make demo`). If that model wasn’t used before, it will download on first load.
+- **Model → lite:** `unset MODE` or `export MODE=lite`, then `make demo`.
+
+### Inspecting the cache (what’s using space)
+
+Downloaded models live in the HuggingFace cache, not in the repo. To see what’s there and how much space it uses:
+
+```bash
+huggingface-cli scan-cache
+```
+
+This lists each cached repo (e.g. `models--google--medgemma-4b-it`, `models--google--medgemma-27b-text-it`) and their size. You can then remove specific cached models via the Hub CLI or Python API if you need to free space; see [HuggingFace cache docs](https://huggingface.co/docs/huggingface_hub/guides/manage-cache).
 
 ## Agentic Architecture
 
@@ -103,8 +171,6 @@ See [docs/SUBMISSION.md](docs/SUBMISSION.md) for:
 - Safety approach (guardrails with explanations)
 - Reproducibility instructions
 - Evaluation summary with metrics
-
-See [submissionSteps.md](submissionSteps.md) for implementation steps and progress.
 
 ## API Endpoints
 

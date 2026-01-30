@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>med-EVE Demo - Medical AI Reasoning</title>
+    <title>med-EVE (Evidence Vector Engine) Demo - Medical AI Reasoning</title>
     <script src="https://unpkg.com/cytoscape@3.23.0/dist/cytoscape.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -950,7 +950,7 @@
 <body>
     <!-- Header -->
     <div id="header">
-        <h1>🧬 med-EVE Medical AI</h1>
+        <h1>🧬 med-EVE (Evidence Vector Engine) Medical AI</h1>
         <div id="model-status" class="lite" title="Click to check model status">
             <span class="status-dot"></span>
             <span id="model-status-text">Lite Mode</span>
@@ -973,6 +973,18 @@
             <textarea id="analyze-text" placeholder="e.g. Ferritin 12 ng/mL, Hb 10.5 g/dL, MCV 75. TSH 2.6 mIU/L. Patient vegan, fatigue." rows="2" style="flex: 1; padding: 10px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 14px; resize: vertical; min-width: 200px;"></textarea>
             <button id="analyze-btn" onclick="runFromText()" style="padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; white-space: nowrap;">Analyze</button>
         </div>
+        <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
+            <label style="font-size: 13px;"><input type="radio" name="analyze-mode" value="new" id="analyze-mode-new" checked> New case</label>
+            <label style="font-size: 13px;"><input type="radio" name="analyze-mode" value="merge" id="analyze-mode-merge"> Add/update to current case</label>
+            <span id="analyze-merge-hint" style="font-size: 11px; color: #999;">(no current case)</span>
+        </div>
+    </div>
+
+    <!-- Run status: current case and saved output path -->
+    <div id="run-status" style="padding: 8px 20px; background: #f8f9fa; border-bottom: 1px solid #e0e0e0; font-size: 12px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+        <span>Current case: <span id="current-case-label">none</span></span>
+        <span>Saved to: <span id="output-path-label">—</span></span>
+        <button type="button" id="clear-current-case-btn" onclick="clearCurrentCase()" style="margin-left: auto; padding: 4px 10px; font-size: 11px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer;">Clear current case</button>
     </div>
 
     <!-- Timeline -->
@@ -1135,6 +1147,58 @@
 
         const API_BASE = 'http://localhost:8000';
         let modelHealth = null;
+        let lastCurrentCaseId = null;
+
+        function updateCurrentCaseDisplay(caseId) {
+            lastCurrentCaseId = caseId || null;
+            const el = document.getElementById('current-case-label');
+            if (el) el.textContent = caseId || 'none';
+            updateAnalyzeMergeState();
+        }
+
+        function updateOutputPathDisplay(path) {
+            const el = document.getElementById('output-path-label');
+            if (el) el.textContent = path || '—';
+        }
+
+        function updateAnalyzeMergeState() {
+            const mergeRadio = document.getElementById('analyze-mode-merge');
+            const hint = document.getElementById('analyze-merge-hint');
+            if (!mergeRadio || !hint) return;
+            if (lastCurrentCaseId) {
+                mergeRadio.disabled = false;
+                hint.textContent = '(merge with current)';
+            } else {
+                mergeRadio.disabled = true;
+                if (document.getElementById('analyze-mode-merge')?.checked) {
+                    document.getElementById('analyze-mode-new').checked = true;
+                }
+                hint.textContent = '(no current case)';
+            }
+        }
+
+        async function clearCurrentCase() {
+            try {
+                const res = await fetch(`${API_BASE}/current-case`, { method: 'DELETE' });
+                if (res.ok) {
+                    updateCurrentCaseDisplay(null);
+                }
+            } catch (e) {
+                console.error('Clear current case failed:', e);
+            }
+        }
+
+        async function refreshCurrentCaseFromBackend() {
+            try {
+                const res = await fetch(`${API_BASE}/current-case`);
+                if (res.ok) {
+                    const data = await res.json();
+                    updateCurrentCaseDisplay(data ? data.case_id : null);
+                }
+            } catch (e) {
+                updateCurrentCaseDisplay(null);
+            }
+        }
 
         // Check model status
         async function checkModelStatus() {
@@ -1218,6 +1282,7 @@
                 await checkModelStatus();
                 await loadCases();
                 
+                await refreshCurrentCaseFromBackend();
                 // If MODE=model and model is loading, wait for it before auto-running so UI shows loading state
                 if (modelHealth && !modelHealth.lite_mode && (modelHealth.model_loading || !modelHealth.model_loaded)) {
                     updateModelStatusIndicator();
@@ -1360,7 +1425,8 @@
                 await checkModelStatus();
                 
                 renderInitial(pipelineData);
-                
+                updateCurrentCaseDisplay(pipelineData.current_case_id ?? pipelineData.case_id);
+                updateOutputPathDisplay(pipelineData.output_path ?? null);
                 if (autoPlay) {
                     setTimeout(() => {
                         playEvents();
@@ -1408,10 +1474,11 @@
                         document.getElementById('hypotheses').innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">Analyzing text...</div>';
                     }
                 }
+                const mergeWithCurrent = document.getElementById('analyze-mode-merge')?.checked === true;
                 const response = await fetch(`${API_BASE}/analyze`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: text })
+                    body: JSON.stringify({ text: text, merge_with_current: mergeWithCurrent })
                 });
                 if (!response.ok) {
                     const errBody = await response.json().catch(() => ({}));
@@ -1425,6 +1492,8 @@
                 events = pipelineData.events || [];
                 await checkModelStatus();
                 renderInitial(pipelineData);
+                updateCurrentCaseDisplay(pipelineData.current_case_id ?? pipelineData.case_id);
+                updateOutputPathDisplay(pipelineData.output_path ?? null);
                 if (autoPlay) {
                     setTimeout(() => playEvents(), 800);
                 }
@@ -1491,13 +1560,13 @@
             
             data.evidence_bundle.subgraph.nodes.forEach(node => {
                 nodeMap[node.id] = node;
-                elements.push({
-                    data: {
-                        id: node.id,
-                        label: node.label,
-                        type: node.type
-                    }
-                });
+                const nodeData = {
+                    id: node.id,
+                    label: node.label,
+                    type: node.type
+                };
+                if (node.dynamic === true) nodeData.dynamic = true;
+                elements.push({ data: nodeData });
             });
 
             data.evidence_bundle.subgraph.edges.forEach(edge => {
@@ -1577,6 +1646,15 @@
                         }
                     },
                     {
+                        selector: 'node[dynamic]',
+                        style: {
+                            'border-width': 4,
+                            'border-color': '#E65100',
+                            'border-style': 'double',
+                            'background-color': '#FFE0B2'
+                        }
+                    },
+                    {
                         selector: 'edge',
                         style: {
                             'label': 'data(label)',
@@ -1651,6 +1729,36 @@
                             'width': 6,
                             'opacity': 1,
                             'z-index': 998
+                        }
+                    },
+                    {
+                        selector: 'edge.conclusion-support',
+                        style: {
+                            'line-color': '#2E7D32',
+                            'target-arrow-color': '#2E7D32',
+                            'width': 5,
+                            'opacity': 1,
+                            'z-index': 997
+                        }
+                    },
+                    {
+                        selector: 'node.conclusion-recommended',
+                        style: {
+                            'background-color': '#7B1FA2',
+                            'border-color': '#4A148C',
+                            'border-width': 5,
+                            'z-index': 996
+                        }
+                    },
+                    {
+                        selector: 'edge.conclusion-recommended',
+                        style: {
+                            'line-color': '#7B1FA2',
+                            'target-arrow-color': '#7B1FA2',
+                            'width': 5,
+                            'line-style': 'dashed',
+                            'opacity': 1,
+                            'z-index': 995
                         }
                     },
                     {
@@ -2076,13 +2184,13 @@
                     'border-width': null,
                     'width': null,
                     'height': null
-                }).removeClass('highlighted pulsing');
+                }).removeClass('highlighted pulsing conclusion-support conclusion-recommended');
                 cy.edges().style({
                     'line-color': null,
                     'target-arrow-color': null,
                     'width': null,
                     'opacity': null
-                }).removeClass('highlighted flowing');
+                }).removeClass('highlighted flowing conclusion-support conclusion-recommended');
             }
             document.getElementById('trust-moments').innerHTML = '';
             document.querySelectorAll('.lab-item').forEach(item => {
@@ -2812,15 +2920,69 @@
             }
         }
 
-        // Keep final state clear after animation completes
+        /**
+         * Compute conclusion highlight IDs from pipelineData: supporting edges and recommended test nodes/edges.
+         * Returns { supportingEdgeIds: Set, recommendedNodeIds: Set, recommendedEdgeIds: Set }.
+         */
+        function getConclusionHighlightIds(data) {
+            const supportingEdgeIds = new Set();
+            const recommendedNodeIds = new Set();
+            const recommendedEdgeIds = new Set();
+            if (!data || !data.evidence_bundle) return { supportingEdgeIds, recommendedNodeIds, recommendedEdgeIds };
+
+            const bundle = data.evidence_bundle;
+            const subgraph = bundle.subgraph || { nodes: [], edges: [] };
+            const reasoner = data.reasoner_output || { hypotheses: [] };
+
+            // Supporting edge IDs: from evidence_bundle.supports and hypotheses[].evidence[].edge_id
+            (bundle.supports || []).forEach(item => {
+                if (item.edge_id) supportingEdgeIds.add(item.edge_id);
+                (item.edge_ids || []).forEach(id => supportingEdgeIds.add(id));
+            });
+            (reasoner.hypotheses || []).forEach(h => {
+                (h.evidence || []).forEach(ev => {
+                    if (ev.edge_id) supportingEdgeIds.add(ev.edge_id);
+                });
+            });
+
+            // Recommended test node IDs: from hypotheses[].next_tests (string or { test_id, label })
+            const testNodes = (subgraph.nodes || []).filter(n => n.type === 'Test');
+            (reasoner.hypotheses || []).forEach(h => {
+                (h.next_tests || []).forEach(t => {
+                    let id = null;
+                    if (typeof t === 'object' && t !== null && t.test_id) id = t.test_id;
+                    else if (typeof t === 'string') {
+                        const lower = t.toLowerCase();
+                        const match = testNodes.find(n =>
+                            n.id === t || n.id === 't_' + lower.replace(/\s+/g, '_') ||
+                            (n.label && n.label.toLowerCase().includes(lower))
+                        );
+                        id = match ? match.id : null;
+                    }
+                    if (id) recommendedNodeIds.add(id);
+                });
+            });
+
+            // Recommended edge IDs: RECOMMENDS_TEST edges whose target (or source) is a recommended test node
+            (subgraph.edges || []).forEach(edge => {
+                if (edge.relation === 'RECOMMENDS_TEST' &&
+                    (recommendedNodeIds.has(edge.to) || recommendedNodeIds.has(edge.from))) {
+                    recommendedEdgeIds.add(edge.id);
+                }
+            });
+
+            return { supportingEdgeIds, recommendedNodeIds, recommendedEdgeIds };
+        }
+
+        // Keep final state clear after animation completes; apply conclusion highlights (supporting edges, recommended tests)
         function finalizeGraphState() {
             if (!cy) return;
             
-            // Remove all animation classes but keep type-based styling
-            cy.nodes().removeClass('highlighted pulsing');
-            cy.edges().removeClass('highlighted flowing');
+            // Remove step animation classes and previous conclusion classes
+            cy.nodes().removeClass('highlighted pulsing conclusion-support conclusion-recommended');
+            cy.edges().removeClass('highlighted flowing conclusion-support conclusion-recommended');
             
-            // Ensure all nodes have their type-based colors visible
+            // Reset nodes/edges to default visibility
             cy.nodes().forEach(node => {
                 const type = node.data('type');
                 if (type) {
@@ -2830,8 +2992,6 @@
                     });
                 }
             });
-            
-            // Ensure all edges have their relation-based colors visible
             cy.edges().forEach(edge => {
                 const relation = edge.data('relation');
                 if (relation) {
@@ -2839,6 +2999,21 @@
                         'opacity': 0.7
                     });
                 }
+            });
+
+            // Apply conclusion highlights from pipelineData
+            const ids = getConclusionHighlightIds(pipelineData);
+            ids.supportingEdgeIds.forEach(edgeId => {
+                const edge = cy.getElementById(edgeId);
+                if (edge.length) edge.addClass('conclusion-support');
+            });
+            ids.recommendedNodeIds.forEach(nodeId => {
+                const node = cy.getElementById(nodeId);
+                if (node.length) node.addClass('conclusion-recommended');
+            });
+            ids.recommendedEdgeIds.forEach(edgeId => {
+                const edge = cy.getElementById(edgeId);
+                if (edge.length) edge.addClass('conclusion-recommended');
             });
         }
 

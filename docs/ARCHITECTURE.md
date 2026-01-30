@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the current architecture of the med-EVE medical reasoning pipeline, focusing on the `/run` endpoint pipeline flow, response schema, event system, and MedGemma integration.
+This document describes the current architecture of the med-EVE (Evidence Vector Engine) medical reasoning pipeline, focusing on the `/run` endpoint pipeline flow, response schema, event system, and MedGemma integration.
 
 ## Pipeline Flow (`backend/app.py:/run`)
 

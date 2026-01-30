@@ -8,10 +8,11 @@ from typing import Optional
 
 # Marker names we recognize (case-insensitive match); order longer names first for regex
 MARKER_NAMES = [
-    "Total Cholesterol", "Reticulocyte Count", "Vitamin B12",
+    "Absolute neutrophil count", "Total Cholesterol", "Reticulocyte Count", "Vitamin B12",
     "Triglycerides", "hsCRP", "Ferritin", "Folate", "Creatinine",
     "Platelets", "Glucose", "Iron", "TSAT", "Hb", "MCV", "RDW",
     "TSH", "FT4", "FT3", "ALT", "AST", "WBC", "LDL", "HDL",
+    "ANC",
 ]
 
 # Default ref ranges and units per marker (ref_low, ref_high, unit)
@@ -39,6 +40,8 @@ DEFAULT_REFS = {
     "Folate": (2, 20, "ng/mL"),
     "Vitamin B12": (200, 900, "pg/mL"),
     "Reticulocyte Count": (0.5, 2.5, "%"),
+    "ANC": (1.5, 8, "K/µL"),
+    "Absolute neutrophil count": (1.5, 8, "K/µL"),
 }
 
 # Patient context keywords -> context dict keys
@@ -100,8 +103,8 @@ def text_to_case(text: str) -> dict:
             )
             if not unit:
                 unit = default_unit
-            # Normalize marker name (use canonical from DEFAULT_REFS or first in MARKER_NAMES)
-            canonical = marker
+            # Normalize marker name (use canonical; map "Absolute neutrophil count" -> "ANC")
+            canonical = "ANC" if marker == "Absolute neutrophil count" else marker
             if canonical in seen_markers:
                 continue
             seen_markers.add(canonical)

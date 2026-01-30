@@ -1,4 +1,4 @@
-# med-EVE: Medical AI Reasoning with Knowledge Graphs and Guardrails
+# med-EVE (Evidence Vector Engine): Medical AI Reasoning with Knowledge Graphs and Guardrails
 
 ## Problem Statement
 

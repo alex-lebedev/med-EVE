@@ -23,6 +23,8 @@ def select_context(normalized_labs, patient_context, events_list=None):
         signals.append("p_hypothyroid")
     if 'hsCRP' in abnormal_markers:
         signals.append("p_inflam_iron_seq")
+    if 'ANC' in abnormal_markers:
+        signals.append("p_inflam_iron_seq")
 
     # Check if we should use model for context selection
     context = {

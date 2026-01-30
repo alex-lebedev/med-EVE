@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# med-EVE Local Demo Runner
+# med-EVE (Evidence Vector Engine) Local Demo Runner
 
-echo "Starting med-EVE Demo..."
+echo "Starting med-EVE (Evidence Vector Engine) Demo..."
 
 # Set environment
 export PYTHONPATH=$PWD

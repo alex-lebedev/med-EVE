@@ -3,7 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 import os
+import re
+from datetime import datetime
+from copy import deepcopy
+from typing import Optional
 from core import lab_normalizer, context_selector, evidence_builder, reasoner_medgemma, guardrails, events
+from core import dynamic_graph
 from core.model_manager import model_manager
 from core.text_to_case import text_to_case
 
@@ -12,6 +17,10 @@ class RunRequest(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     text: str
+    merge_with_current: bool = False
+
+# In-memory current case (set after /run or /analyze; used when merge_with_current=True)
+current_case: Optional[dict] = None
 
 # Load cases
 def load_cases():
@@ -58,7 +67,7 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {"message": "med-EVE Demo API", "endpoints": ["/cases", "/health"]}
+    return {"message": "med-EVE (Evidence Vector Engine) Demo API", "endpoints": ["/cases", "/health"]}
 
 @app.get("/cases")
 def get_cases():
@@ -78,6 +87,7 @@ def _run_pipeline(case: dict, events_list: list) -> dict:
     case_card, subgraph = context_selector.select_context(
         normalized_labs, case["patient"]["context"], events_list
     )
+    subgraph = dynamic_graph.extend_subgraph(case_card, subgraph)
     events.highlight(
         events_list, events.Step.CONTEXT_SELECT,
         [n["id"] for n in subgraph["nodes"]], [e["id"] for e in subgraph["edges"]],
@@ -131,6 +141,58 @@ def _run_pipeline(case: dict, events_list: list) -> dict:
     }
 
 
+def _serialize_event(e):
+    """Convert Event to dict for JSON (Pydantic v1/v2 compatible)."""
+    return e.model_dump() if hasattr(e, "model_dump") else e.dict()
+
+
+def _merge_parsed_into_current(existing: dict, parsed: dict) -> dict:
+    """Merge parsed case (from text) into existing current case. Returns new dict; does not mutate existing."""
+    merged = deepcopy(existing)
+    # Labs: upsert by marker (existing order first, then new markers from parsed)
+    merged_labs = [deepcopy(lab) for lab in existing["labs"]]
+    seen = {lab["marker"] for lab in merged_labs}
+    for lab in parsed["labs"]:
+        if lab["marker"] in seen:
+            for i, l in enumerate(merged_labs):
+                if l["marker"] == lab["marker"]:
+                    merged_labs[i] = deepcopy(lab)
+                    break
+        else:
+            merged_labs.append(deepcopy(lab))
+            seen.add(lab["marker"])
+    merged["labs"] = merged_labs
+    # Patient context: union (parsed overrides)
+    merged["patient"] = merged.get("patient") or {"age": None, "sex": None, "context": {}}
+    ctx_current = merged["patient"].get("context") or {}
+    ctx_parsed = (parsed.get("patient") or {}).get("context") or {}
+    merged["patient"]["context"] = {**ctx_current, **ctx_parsed}
+    merged["case_id"] = existing.get("case_id") or "FromText"
+    return merged
+
+
+def _write_pipeline_output(case: dict, result: dict) -> Optional[str]:
+    """Write pipeline result to output/final_output_{case_id}_{timestamp}.json. Returns path or None on failure."""
+    case_id = case.get("case_id") or "FromText"
+    sanitized = re.sub(r"[^\w\-]", "_", case_id)
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    filename = f"final_output_{sanitized}_{ts}.json"
+    out_dir = os.path.join(os.path.dirname(__file__), "output")
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        full_path = os.path.join(out_dir, filename)
+        payload = deepcopy(result)
+        payload["case_id"] = case_id
+        payload["timestamp"] = ts
+        payload["events"] = [_serialize_event(e) for e in result["events"]]
+        with open(full_path, "w") as f:
+            json.dump(payload, f, indent=2)
+        return os.path.join("output", filename)
+    except (OSError, TypeError) as e:
+        print(f"Failed to write pipeline output: {e}")
+        return None
+
+
 @app.post("/run")
 def run_pipeline(body: RunRequest, mode: str = "lite"):
     case_id = body.case_id
@@ -146,7 +208,13 @@ def run_pipeline(body: RunRequest, mode: str = "lite"):
                 detail="Model did not finish loading. Please try again or check server logs.",
             ) from e
 
-    return _run_pipeline(case, events_list)
+    result = _run_pipeline(case, events_list)
+    result["case_id"] = case_id
+    result["output_path"] = _write_pipeline_output(case, result)
+    global current_case
+    current_case = deepcopy(case)
+    result["current_case_id"] = case_id
+    return result
 
 
 @app.post("/analyze")
@@ -163,11 +231,42 @@ def analyze_from_text(body: AnalyzeRequest):
             ) from e
 
     try:
-        case = text_to_case(body.text)
+        parsed = text_to_case(body.text)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    return _run_pipeline(case, events_list)
+    global current_case
+    if body.merge_with_current and current_case:
+        case = _merge_parsed_into_current(current_case, parsed)
+    else:
+        case = deepcopy(parsed)
+        case["case_id"] = "FromText"
+
+    result = _run_pipeline(case, events_list)
+    result["case_id"] = case["case_id"]
+    result["output_path"] = _write_pipeline_output(case, result)
+    current_case = deepcopy(case)
+    result["current_case_id"] = case["case_id"]
+    return result
+
+@app.get("/current-case")
+def get_current_case():
+    """Return current case id and summary, or null if none."""
+    global current_case
+    if current_case is None:
+        return None
+    cid = current_case.get("case_id") or "FromText"
+    n_labs = len(current_case.get("labs") or [])
+    return {"case_id": cid, "summary": f"{cid} ({n_labs} labs)"}
+
+
+@app.delete("/current-case")
+def clear_current_case():
+    """Clear in-memory current case."""
+    global current_case
+    current_case = None
+    return {"ok": True}
+
 
 @app.get("/health")
 def health():

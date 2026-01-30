@@ -1,9 +1,9 @@
 #!/bin/bash
-# Quick setup script for med-EVE Demo
+# Quick setup script for med-EVE (Evidence Vector Engine) Demo
 
 set -e  # Exit on error
 
-echo "🚀 Setting up med-EVE Demo..."
+echo "🚀 Setting up med-EVE (Evidence Vector Engine) Demo..."
 echo ""
 
 # Check Python

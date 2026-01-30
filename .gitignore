@@ -48,3 +48,6 @@ logs/
 # Models directory (large files; only README.md is tracked)
 models/*
 !models/README.md
+
+# Pipeline output (generated final_output_*.json)
+output/

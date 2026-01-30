@@ -1,6 +1,6 @@
-# med-EVE Local Demo Runner (Windows)
+# med-EVE (Evidence Vector Engine) Local Demo Runner (Windows)
 
-Write-Host "Starting med-EVE Demo..."
+Write-Host "Starting med-EVE (Evidence Vector Engine) Demo..."
 
 # Set environment
 $env:PYTHONPATH = "$PWD\backend"

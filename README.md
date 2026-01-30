@@ -1,10 +1,10 @@
-# med-EVE: Agentic Medical AI Reasoning with Knowledge Graphs and Guardrails
+# med-EVE (Evidence Vector Engine): Agentic Medical AI Reasoning with Knowledge Graphs and Guardrails
 
 A safe, transparent, and auditable medical AI system that combines knowledge graph reasoning with **agentic MedGemma** for clinical decision support.
 
 ## Overview
 
-med-EVE is an **agentic medical reasoning pipeline** where MedGemma is used at **6 key decision points**, with the model deciding when to engage for complex reasoning:
+med-EVE is an **agentic medical reasoning pipeline** (Evidence Vector Engine) where MedGemma is used at **6 key decision points**, with the model deciding when to engage for complex reasoning:
 
 1. Normalizes lab results
 2. **Context Selection Agent**: Identifies patterns (uses model for complex cases)
@@ -216,4 +216,4 @@ If you use this code, please cite:
 
 **Alexander Lebedev MD PhD and Luigi Espasiano MD** (Function Health)
 
-*med-EVE: Medical AI Reasoning with Knowledge Graphs and Guardrails* — MedGemma Impact Challenge Submission.
+*med-EVE (Evidence Vector Engine): Medical AI Reasoning with Knowledge Graphs and Guardrails* — MedGemma Impact Challenge Submission.

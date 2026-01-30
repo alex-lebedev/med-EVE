@@ -1,0 +1,7 @@
+# Dynamic marker -> pattern edges (markers not in static KG).
+# Each marker can link to existing patterns with relation and rationale.
+# Only edges whose pattern_id is in the current case signals and subgraph are added.
+ANC:
+  - pattern_id: p_inflam_iron_seq
+    relation: SUPPORTS
+    rationale: "Elevated ANC can support inflammatory context; leukocytosis often accompanies acute or chronic inflammation."

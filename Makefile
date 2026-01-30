@@ -44,7 +44,7 @@ run:
 
 # Start demo (backend + frontend + browser)
 demo:
-	@echo "Starting med-EVE Demo..."
+	@echo "Starting med-EVE (Evidence Vector Engine) Demo..."
 	@echo ""
 	@echo "This will:"
 	@echo "  1. Start backend on http://localhost:8000"
@@ -110,7 +110,7 @@ demo:
 
 # Start demo with model enabled
 model-demo:
-	@echo "Starting med-EVE Demo with MODEL enabled..."
+	@echo "Starting med-EVE (Evidence Vector Engine) Demo with MODEL enabled..."
 	@export MODE=model && $(MAKE) demo
 
 # Stop all servers (find and kill processes)

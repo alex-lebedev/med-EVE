@@ -1,4 +1,4 @@
-# Quick Reference: Understanding med-EVE Output
+# Quick Reference: Understanding med-EVE (Evidence Vector Engine) Output
 
 ## 🎯 Main Output: `reasoner_output`
 

@@ -1,6 +1,6 @@
 # Local model directory (optional)
 
-This folder is **optional**. Use it if you want med-EVE to load a model from the repo instead of the HuggingFace cache.
+This folder is **optional**. Use it if you want med-EVE (Evidence Vector Engine) to load a model from the repo instead of the HuggingFace cache.
 
 ## Recommended: use the actual medical model in the repo
 

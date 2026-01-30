@@ -1,10 +1,10 @@
-# Aletheia: Agentic Medical AI Reasoning with Knowledge Graphs and Guardrails
+# med-EVE: Agentic Medical AI Reasoning with Knowledge Graphs and Guardrails
 
 A safe, transparent, and auditable medical AI system that combines knowledge graph reasoning with **agentic MedGemma** for clinical decision support.
 
 ## Overview
 
-Aletheia is an **agentic medical reasoning pipeline** where MedGemma is used at **6 key decision points**, with the model deciding when to engage for complex reasoning:
+med-EVE is an **agentic medical reasoning pipeline** where MedGemma is used at **6 key decision points**, with the model deciding when to engage for complex reasoning:
 
 1. Normalizes lab results
 2. **Context Selection Agent**: Identifies patterns (uses model for complex cases)
@@ -26,6 +26,12 @@ Aletheia is an **agentic medical reasoning pipeline** where MedGemma is used at 
 - **Deterministic Behavior**: Consistent outputs with rule-based fallback
 - **Hybrid Approach**: Combines structured knowledge graphs with flexible LLM reasoning
 
+### No OpenAI — local MedGemma only
+
+This app does **not** use the OpenAI API or any other external LLM API. All model reasoning uses **MedGemma** only: either the local medical model in `models/medgemma-4b-it` (when present) or MedGemma from HuggingFace. The backend prefers the local folder when it exists so you can run fully offline.
+
+**Recommended setup for the actual medical model in the repo:** run `python scripts/download_model.py`, then `export MODE=model` and `make demo`. The app will use the model from `models/medgemma-4b-it` and will not call any external API.
+
 ## Quick Start
 
 ### Installation
@@ -33,7 +39,7 @@ Aletheia is an **agentic medical reasoning pipeline** where MedGemma is used at 
 ```bash
 # Clone repository
 git clone <repo-url>
-cd aletheia-demo
+cd med-EVE
 
 # Install dependencies
 pip install -r requirements.txt
@@ -101,7 +107,7 @@ Set before `make demo` (only applies when `MODE=model`):
 
 ### Where the model comes from
 
-1. **Repo `models/` folder** – If you have placed a model in the repo under `models/<model-id>/` (e.g. `models/medgemma-4b-it/` or `models/medgemma-27b-text-it/`) with `config.json` and weight files, Aletheia loads from there.
+1. **Repo `models/` folder** – If you have placed a model in the repo under `models/<model-id>/` (e.g. `models/medgemma-4b-it/` or `models/medgemma-27b-text-it/`) with `config.json` and weight files, the backend **prefers** this and loads from there (no HuggingFace API call; works offline).
 2. **HuggingFace cache** – Otherwise the app downloads from HuggingFace on first use and caches under `~/.cache/huggingface` (or `$HF_CACHE_DIR`). It does **not** copy downloads into `models/`; the cache is the single copy.
 
 See [models/README.md](models/README.md) if you want to put a model in the repo for a self-contained setup.
@@ -111,7 +117,7 @@ See [models/README.md](models/README.md) if you want to put a model in the repo 
 1. **Clone and install**
    ```bash
    git clone <repo-url>
-   cd aletheia-demo
+   cd med-EVE
    pip install -r requirements.txt
    ```
 
@@ -128,7 +134,7 @@ See [models/README.md](models/README.md) if you want to put a model in the repo 
 
 4. **First run** – The backend will log “Loading model from HuggingFace…” and download (can take 30+ minutes for 27B). The progress bar may stay at 0% for a while; you can confirm activity with `huggingface-cli scan-cache` or by watching `~/.cache/huggingface`.
 
-5. **When ready** – The backend logs “Model loaded successfully!” and the UI shows model status. You can also call `GET /health` and check `model_loaded` and `lite_mode`.
+5. **When ready** – The backend logs “Model loaded successfully from repo…” or “Model loaded successfully from HuggingFace.” You can call `GET /health` and check `model_loaded`, `lite_mode`, and `model_source` (e.g. `"local"` when using `models/medgemma-4b-it`).
 
 ### Switching between lite and model / between models
 
@@ -158,7 +164,7 @@ or, if you set a custom cache when running the app: `HF_HOME=/path/you/used hf c
 
 ## Agentic Architecture
 
-Aletheia uses MedGemma at **6 key decision points**:
+med-EVE uses MedGemma at **6 key decision points**:
 
 1. **Context Selection Agent**: Identifies patterns for complex cases (>3 markers)
 2. **Evidence Weighting Agent**: Dynamic weighting for rare/conflicting evidence
@@ -210,4 +216,4 @@ If you use this code, please cite:
 
 **Alexander Lebedev MD PhD and Luigi Espasiano MD** (Function Health)
 
-*Aletheia: Medical AI Reasoning with Knowledge Graphs and Guardrails* — MedGemma Impact Challenge Submission.
+*med-EVE: Medical AI Reasoning with Knowledge Graphs and Guardrails* — MedGemma Impact Challenge Submission.

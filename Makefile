@@ -1,5 +1,8 @@
 .PHONY: verify test evals help run demo stop model-demo
 
+# Prefer venv/.venv python so "make demo" works without activating; fallback to python3 (macOS)
+PYTHON := $(shell if [ -f venv/bin/python ]; then echo venv/bin/python; elif [ -f .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi)
+
 # Default target
 help:
 	@echo "Available targets:"
@@ -18,12 +21,12 @@ verify: test evals
 # Run pytest tests
 test:
 	@echo "Running pytest tests..."
-	@cd backend && export PYTHONPATH=$$(pwd) && python -m pytest tests/ -v || echo "Note: Some tests may fail due to environment issues (torch/numpy)"
+	@cd backend && export PYTHONPATH=$$(pwd) && $(PYTHON) -m pytest tests/ -v || echo "Note: Some tests may fail due to environment issues (torch/numpy)"
 
 # Run evaluation script
 evals:
 	@echo "Running evals..."
-	@cd backend && export PYTHONPATH=$$(pwd) && python evals/run_evals.py
+	@cd backend && export PYTHONPATH=$$(pwd) && $(PYTHON) evals/run_evals.py
 
 # Start backend server only
 run:
@@ -37,11 +40,11 @@ run:
 		echo "✓ MODE=$$MODE detected"; \
 	fi
 	@echo "Press Ctrl+C to stop"
-	@cd backend && export PYTHONPATH=$$(pwd) && python -m uvicorn app:app --host 0.0.0.0 --port 8000
+	@cd backend && export PYTHONPATH=$$(pwd) && $(PYTHON) -m uvicorn app:app --host 0.0.0.0 --port 8000
 
 # Start demo (backend + frontend + browser)
 demo:
-	@echo "Starting Aletheia Demo..."
+	@echo "Starting med-EVE Demo..."
 	@echo ""
 	@echo "This will:"
 	@echo "  1. Start backend on http://localhost:8000"
@@ -57,13 +60,14 @@ demo:
 	@-lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 	@sleep 2
 	@ROOT_DIR=$$(pwd); \
+	if [ -f "$$ROOT_DIR/venv/bin/python" ]; then PY=$$ROOT_DIR/venv/bin/python; elif [ -f "$$ROOT_DIR/.venv/bin/python" ]; then PY=$$ROOT_DIR/.venv/bin/python; else PY=python3; fi; \
 	if [ -z "$$MODE" ]; then \
 		echo "⚠️  Running in LITE mode (rule-based only)"; \
 		echo "   To enable model: export MODE=model && make demo"; \
 	else \
 		echo "✓ MODE=$$MODE detected - model will be enabled"; \
 	fi; \
-	cd $$ROOT_DIR/backend && export PYTHONPATH=$$ROOT_DIR/backend && export MODE=$$MODE && python -m uvicorn app:app --host 0.0.0.0 --port 8000 > /tmp/backend.log 2>&1 & \
+	cd $$ROOT_DIR/backend && export PYTHONPATH=$$ROOT_DIR/backend && export MODE=$$MODE && $$PY -m uvicorn app:app --host 0.0.0.0 --port 8000 > /tmp/backend.log 2>&1 & \
 	BACKEND_PID=$$!; \
 	echo "Backend starting (PID: $$BACKEND_PID)..."; \
 	sleep 4; \
@@ -71,7 +75,7 @@ demo:
 		echo "❌ Backend failed to start. Check logs: tail -f /tmp/backend.log"; \
 		exit 1; \
 	fi; \
-	cd $$ROOT_DIR/frontend && python -m http.server 8080 > /tmp/frontend.log 2>&1 & \
+	cd $$ROOT_DIR/frontend && $$PY -m http.server 8080 > /tmp/frontend.log 2>&1 & \
 	FRONTEND_PID=$$!; \
 	echo "Frontend starting (PID: $$FRONTEND_PID)..."; \
 	sleep 2; \
@@ -106,7 +110,7 @@ demo:
 
 # Start demo with model enabled
 model-demo:
-	@echo "Starting Aletheia Demo with MODEL enabled..."
+	@echo "Starting med-EVE Demo with MODEL enabled..."
 	@export MODE=model && $(MAKE) demo
 
 # Stop all servers (find and kill processes)

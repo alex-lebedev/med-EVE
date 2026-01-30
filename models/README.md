@@ -1,10 +1,14 @@
 # Local model directory (optional)
 
-This folder is **optional**. Use it if you want Aletheia to load a model from the repo instead of the HuggingFace cache.
+This folder is **optional**. Use it if you want med-EVE to load a model from the repo instead of the HuggingFace cache.
+
+## Recommended: use the actual medical model in the repo
+
+Placing the 4B model in `models/medgemma-4b-it/` (e.g. via `python scripts/download_model.py`) is the **recommended** way to use the actual medical model. The backend **prefers** this folder over HuggingFace when it exists: it loads from here and does not call the HuggingFace API, so you can run fully offline.
 
 ## When the app uses this folder
 
-- If you place a model here (e.g. `models/medgemma-4b-it/` or `models/medgemma-27b-text-it/`) with `config.json` and the usual weight files, the backend loads from here and does **not** use the cache for that model.
+- If you place a model here (e.g. `models/medgemma-4b-it/` or `models/medgemma-27b-text-it/`) with `config.json` and the usual weight files, the backend **prefers** this and loads from here (no HuggingFace API; works offline).
 - If you don’t put anything here, the app downloads from HuggingFace and uses `~/.cache/huggingface` (see main [README](../README.md) section **Running modes and models**).
 
 ## Folder layout

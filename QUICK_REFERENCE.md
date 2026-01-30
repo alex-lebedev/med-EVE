@@ -1,4 +1,4 @@
-# Quick Reference: Understanding Aletheia Output
+# Quick Reference: Understanding med-EVE Output
 
 ## 🎯 Main Output: `reasoner_output`
 

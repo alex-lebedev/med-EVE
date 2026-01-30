@@ -44,12 +44,44 @@ def _get_local_model_path(model_name: str) -> Optional[str]:
             return local_path
     return None
 
+
+def _is_explicit_path(value: str) -> bool:
+    """True if value looks like a local path (./path, /path, or file:///path)."""
+    v = value.strip()
+    return v.startswith("./") or v.startswith("../") or v.startswith("/") or v.startswith("file://")
+
+
+def _resolve_model_source() -> tuple[str, str, str]:
+    """
+    Resolve effective model source at init. Prefer local models/medgemma-4b-it when present.
+    Returns (model_source, model_source_type, model_name_display).
+    model_source: path or HuggingFace id for from_pretrained().
+    model_source_type: "local" or "huggingface".
+    model_name_display: for health/logs.
+    """
+    raw = os.getenv("MEDGEMMA_MODEL", "google/medgemma-4b-it").strip()
+    if _is_explicit_path(raw):
+        # Explicit path: resolve to absolute
+        if raw.startswith("file://"):
+            path = os.path.abspath(raw.replace("file://", ""))
+        else:
+            path = os.path.abspath(os.path.join(_REPO_ROOT, raw) if not os.path.isabs(raw) else raw)
+        if os.path.isdir(path) and os.path.exists(os.path.join(path, "config.json")):
+            return path, "local", os.path.basename(path) + " (local)"
+        return path, "local", os.path.basename(path) if os.path.isdir(path) else raw
+    # HuggingFace id: prefer local models/<dir> when it exists
+    local_path = _get_local_model_path(raw)
+    if local_path:
+        return local_path, "local", raw + " (local)"
+    return raw, "huggingface", raw
+
+
 class ModelManager:
     def __init__(self):
         self.device = self.detect_device()
         self.model = None
         self.tokenizer = None
-        self.model_name = DEFAULT_MODEL
+        self.model_source, self.model_source_type, self.model_name = _resolve_model_source()
         self.lite_mode = (MODE != "model")
         self.model_loaded = False
         self.model_loading = False
@@ -92,7 +124,7 @@ class ModelManager:
             )
 
     def load_model(self):
-        """Load MedGemma model - checks local directory first, then HuggingFace"""
+        """Load MedGemma model - uses resolved source (local models/medgemma-4b-it or HuggingFace)."""
         if not TRANSFORMERS_AVAILABLE:
             raise Exception("transformers not available. Install with: pip install transformers")
         if not HF_AVAILABLE:
@@ -103,24 +135,21 @@ class ModelManager:
 
         self.model_loading = True
         self.model_loaded_event.clear()
+        use_local = self.model_source_type == "local"
         try:
-            # Check for local model first
-            local_model_path = _get_local_model_path(self.model_name)
-            model_source = local_model_path if local_model_path else self.model_name
-
-            if local_model_path:
-                print(f"📦 Loading model from local directory: {local_model_path}")
+            if use_local:
+                print(f"📦 Loading model from repo: {self.model_source}")
             else:
-                print(f"🌐 Loading model from HuggingFace: {self.model_name}")
-                # Verify model is accessible on HuggingFace
+                print(f"🌐 Loading model from HuggingFace: {self.model_source}")
+                # Verify model is accessible on HuggingFace (skip when local for offline use)
                 api = HfApi()
-                api.model_info(self.model_name)
+                api.model_info(self.model_source)
 
             try:
                 # Load tokenizer
                 self.tokenizer = AutoTokenizer.from_pretrained(
-                    model_source,
-                    cache_dir=CACHE_DIR if not local_model_path else None,
+                    self.model_source,
+                    cache_dir=CACHE_DIR if not use_local else None,
                     trust_remote_code=True
                 )
 
@@ -129,7 +158,7 @@ class ModelManager:
                     "trust_remote_code": True
                 }
 
-                if not local_model_path:
+                if not use_local:
                     load_kwargs["cache_dir"] = CACHE_DIR
 
                 if self.device == "cuda":
@@ -143,7 +172,7 @@ class ModelManager:
                         load_kwargs["quantization_config"] = quantization_config
                         load_kwargs["device_map"] = "auto"
                         self.model = AutoModelForCausalLM.from_pretrained(
-                            model_source,
+                            self.model_source,
                             **load_kwargs
                         )
                     except Exception:
@@ -151,7 +180,7 @@ class ModelManager:
                         load_kwargs.pop("quantization_config", None)
                         load_kwargs["device_map"] = "auto"
                         self.model = AutoModelForCausalLM.from_pretrained(
-                            model_source,
+                            self.model_source,
                             **load_kwargs
                         )
                 elif self.device == "mps":
@@ -162,7 +191,7 @@ class ModelManager:
                     load_kwargs["low_cpu_mem_usage"] = True
                     # Load model first, then move to device
                     self.model = AutoModelForCausalLM.from_pretrained(
-                        model_source,
+                        self.model_source,
                         **load_kwargs
                     )
                     # Move to MPS device manually
@@ -170,7 +199,7 @@ class ModelManager:
                 else:
                     # CPU - use full precision
                     self.model = AutoModelForCausalLM.from_pretrained(
-                        model_source,
+                        self.model_source,
                         **load_kwargs
                     )
 
@@ -180,16 +209,19 @@ class ModelManager:
 
                 self.model_loaded = True
                 self.lite_mode = False
-                print(f"✅ Model loaded successfully!")
+                if use_local:
+                    print(f"✅ Model loaded successfully from repo (models/medgemma-4b-it or local path).")
+                else:
+                    print(f"✅ Model loaded successfully from HuggingFace.")
             except Exception as e:
                 self.lite_mode = True
                 self.model_loaded = False
                 error_msg = str(e)
                 # Don't raise exception during pre-load - just log and continue in lite mode
-                if local_model_path:
-                    print(f"⚠️  Model pre-load failed (will load on first use): Failed to load local model from {local_model_path}. Error: {error_msg}")
+                if use_local:
+                    print(f"⚠️  Model pre-load failed (will load on first use): Failed to load local model from {self.model_source}. Error: {error_msg}")
                 else:
-                    print(f"⚠️  Model pre-load failed (will load on first use): Failed to load model {self.model_name}. Error: {error_msg}")
+                    print(f"⚠️  Model pre-load failed (will load on first use): Failed to load model {self.model_source}. Error: {error_msg}")
         finally:
             self.model_loading = False
             self.model_loaded_event.set()
@@ -321,6 +353,8 @@ class ModelManager:
             "device": self.device,
             "lite_mode": self.lite_mode,
             "model_name": self.model_name,
+            "model_source": self.model_source_type,
+            "model_source_path_or_id": self.model_source,
             "cache_size": len(self.response_cache)
         }
 

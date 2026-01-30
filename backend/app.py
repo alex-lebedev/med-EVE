@@ -1,13 +1,17 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 import os
 from core import lab_normalizer, context_selector, evidence_builder, reasoner_medgemma, guardrails, events
 from core.model_manager import model_manager
+from core.text_to_case import text_to_case
 
 class RunRequest(BaseModel):
     case_id: str
+
+class AnalyzeRequest(BaseModel):
+    text: str
 
 # Load cases
 def load_cases():
@@ -54,7 +58,7 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {"message": "Aletheia Demo API", "endpoints": ["/cases", "/health"]}
+    return {"message": "med-EVE Demo API", "endpoints": ["/cases", "/health"]}
 
 @app.get("/cases")
 def get_cases():
@@ -64,71 +68,53 @@ def get_cases():
 def get_case(case_id: str):
     return cases.get(case_id)
 
-@app.post("/run")
-def run_pipeline(body: RunRequest, mode: str = "lite"):
-    case_id = body.case_id
-    case = cases[case_id]
-    events_list = []
-
-    # When MODE=model, block until model is loaded before running pipeline
-    if os.getenv("MODE", "lite").lower() == "model":
-        try:
-            model_manager.wait_for_model(timeout=300.0)
-        except TimeoutError as e:
-            raise HTTPException(
-                status_code=503,
-                detail="Model did not finish loading. Please try again or check server logs.",
-            ) from e
-
-    # LAB_NORMALIZE
+def _run_pipeline(case: dict, events_list: list) -> dict:
+    """Run the full pipeline on a case dict (patient + labs); returns same shape as /run."""
+    normalized_labs = lab_normalizer.normalize_labs(case["labs"])
     events.start_step(events_list, events.Step.LAB_NORMALIZE)
-    normalized_labs = lab_normalizer.normalize_labs(case['labs'])
     events.end_step(events_list, events.Step.LAB_NORMALIZE)
 
-    # CONTEXT_SELECT
     events.start_step(events_list, events.Step.CONTEXT_SELECT)
-    case_card, subgraph = context_selector.select_context(normalized_labs, case['patient']['context'], events_list)
-    events.highlight(events_list, events.Step.CONTEXT_SELECT, [n['id'] for n in subgraph['nodes']], [e['id'] for e in subgraph['edges']], "Context subgraph")
+    case_card, subgraph = context_selector.select_context(
+        normalized_labs, case["patient"]["context"], events_list
+    )
+    events.highlight(
+        events_list, events.Step.CONTEXT_SELECT,
+        [n["id"] for n in subgraph["nodes"]], [e["id"] for e in subgraph["edges"]],
+        "Context subgraph"
+    )
     events.end_step(events_list, events.Step.CONTEXT_SELECT)
 
-    # EVIDENCE_SCORE
     events.start_step(events_list, events.Step.EVIDENCE_SCORE)
-    evidence_bundle = evidence_builder.build_evidence(case_card, subgraph, normalized_labs, events_list, events)
+    evidence_bundle = evidence_builder.build_evidence(
+        case_card, subgraph, normalized_labs, events_list, events
+    )
     events.end_step(events_list, events.Step.EVIDENCE_SCORE)
 
-    # REASON
     events.start_step(events_list, events.Step.REASON)
     reasoner_output = reasoner_medgemma.reason(case_card, evidence_bundle, events_list)
     events.end_step(events_list, events.Step.REASON)
 
-    # GUARDRAILS
     events.start_step(events_list, events.Step.GUARDRAILS)
-    guardrail_report = guardrails.check_guardrails(reasoner_output, case_card, normalized_labs, events_list)
-    if guardrail_report['status'] == 'FAIL':
-        events.guardrail_fail(events_list, events.Step.GUARDRAILS, guardrail_report['failed_rules'])
+    guardrail_report = guardrails.check_guardrails(
+        reasoner_output, case_card, normalized_labs, events_list
+    )
+    if guardrail_report["status"] == "FAIL":
+        events.guardrail_fail(events_list, events.Step.GUARDRAILS, guardrail_report["failed_rules"])
         before = reasoner_output.copy()
-        # Apply patches (simple implementation for removes)
-        for patch in guardrail_report['patches']:
-            if patch['op'] == 'remove':
-                path_parts = patch['path'].strip('/').split('/')
+        for patch in guardrail_report["patches"]:
+            if patch["op"] == "remove":
+                path_parts = patch["path"].strip("/").split("/")
                 obj = reasoner_output
                 for part in path_parts[:-1]:
-                    if part.isdigit():
-                        obj = obj[int(part)]
-                    else:
-                        obj = obj[part]
-                index = int(path_parts[-1])
-                del obj[index]
-        after = reasoner_output
-        events.guardrail_patch_applied(events_list, events.Step.GUARDRAILS, before, after)
+                    obj = obj[int(part)] if part.isdigit() else obj[part]
+                del obj[int(path_parts[-1])]
+        events.guardrail_patch_applied(events_list, events.Step.GUARDRAILS, before, reasoner_output)
     events.end_step(events_list, events.Step.GUARDRAILS)
 
     events.final_ready(events_list)
-
-    # Track model usage statistics
-    model_calls = [e for e in events_list if e.type == 'MODEL_CALLED']
-    agent_decisions = [e for e in events_list if e.type == 'AGENT_DECISION']
-    
+    model_calls = [e for e in events_list if e.type == "MODEL_CALLED"]
+    agent_decisions = [e for e in events_list if e.type == "AGENT_DECISION"]
     return {
         "normalized_labs": normalized_labs,
         "case_card": case_card,
@@ -140,9 +126,48 @@ def run_pipeline(body: RunRequest, mode: str = "lite"):
         "model_usage": {
             "model_calls": len(model_calls),
             "agent_decisions": len(agent_decisions),
-            "model_mode": not model_manager.lite_mode
-        }
+            "model_mode": not model_manager.lite_mode,
+        },
     }
+
+
+@app.post("/run")
+def run_pipeline(body: RunRequest, mode: str = "lite"):
+    case_id = body.case_id
+    case = cases[case_id]
+    events_list = []
+
+    if os.getenv("MODE", "lite").lower() == "model":
+        try:
+            model_manager.wait_for_model(timeout=300.0)
+        except TimeoutError as e:
+            raise HTTPException(
+                status_code=503,
+                detail="Model did not finish loading. Please try again or check server logs.",
+            ) from e
+
+    return _run_pipeline(case, events_list)
+
+
+@app.post("/analyze")
+def analyze_from_text(body: AnalyzeRequest):
+    """Parse free text into a case, run the same pipeline as /run (local MedGemma), return same shape."""
+    events_list = []
+    if os.getenv("MODE", "lite").lower() == "model":
+        try:
+            model_manager.wait_for_model(timeout=300.0)
+        except TimeoutError as e:
+            raise HTTPException(
+                status_code=503,
+                detail="Model did not finish loading. Please try again or check server logs.",
+            ) from e
+
+    try:
+        case = text_to_case(body.text)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return _run_pipeline(case, events_list)
 
 @app.get("/health")
 def health():

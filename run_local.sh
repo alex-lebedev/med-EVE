@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Aletheia Local Demo Runner
+# med-EVE Local Demo Runner
 
-echo "Starting Aletheia Demo..."
+echo "Starting med-EVE Demo..."
 
 # Set environment
 export PYTHONPATH=$PWD

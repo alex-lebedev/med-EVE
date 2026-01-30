@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document provides a detailed, step-by-step walkthrough of how the agentic Aletheia system processes a new case, demonstrating MedGemma usage at each decision point.
+This document provides a detailed, step-by-step walkthrough of how the agentic med-EVE system processes a new case, demonstrating MedGemma usage at each decision point.
 
 ---
 

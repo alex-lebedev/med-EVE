@@ -3,7 +3,7 @@
 ## Step 1: Run Setup Script
 
 ```bash
-cd path/to/aletheia-demo   # or wherever you cloned the repo
+cd path/to/med-EVE   # or wherever you cloned the repo
 ./setup.sh
 ```
 
@@ -17,7 +17,7 @@ This will:
 Every time you open a new terminal:
 
 ```bash
-cd path/to/aletheia-demo   # same as above
+cd path/to/med-EVE   # same as above
 source venv/bin/activate
 ```
 

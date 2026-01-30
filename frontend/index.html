@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aletheia Demo - Medical AI Reasoning</title>
+    <title>med-EVE Demo - Medical AI Reasoning</title>
     <script src="https://unpkg.com/cytoscape@3.23.0/dist/cytoscape.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -950,7 +950,7 @@
 <body>
     <!-- Header -->
     <div id="header">
-        <h1>🧬 Aletheia Medical AI</h1>
+        <h1>🧬 med-EVE Medical AI</h1>
         <div id="model-status" class="lite" title="Click to check model status">
             <span class="status-dot"></span>
             <span id="model-status-text">Lite Mode</span>
@@ -960,6 +960,18 @@
             <label for="case-select">Case:</label>
             <select id="case-select"></select>
             <button onclick="loadSelectedCase()">Load</button>
+        </div>
+    </div>
+
+    <!-- Analyze from text (MedGemma pipeline, same traces/graph as case load) -->
+    <div id="analyze-panel" style="background: #fff; border-bottom: 1px solid #e0e0e0; padding: 12px 20px;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <strong style="color: #5c6bc0;">Analyze from text</strong>
+            <span style="font-size: 12px; color: #6c757d;">Paste lab values (e.g. Ferritin 12 ng/mL, Hb 10.5 g/dL). Uses local MedGemma.</span>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: flex-start;">
+            <textarea id="analyze-text" placeholder="e.g. Ferritin 12 ng/mL, Hb 10.5 g/dL, MCV 75. TSH 2.6 mIU/L. Patient vegan, fatigue." rows="2" style="flex: 1; padding: 10px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 14px; resize: vertical; min-width: 200px;"></textarea>
+            <button id="analyze-btn" onclick="runFromText()" style="padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; white-space: nowrap;">Analyze</button>
         </div>
     </div>
 
@@ -1366,6 +1378,63 @@
                     <small>Make sure the backend is running on http://localhost:8000</small>
                 </div>`;
                 alert(`Failed to load case: ${msg}\n\nMake sure the backend is running on http://localhost:8000`);
+            }
+        }
+
+        async function runFromText(autoPlay = true) {
+            const textarea = document.getElementById('analyze-text');
+            const text = (textarea && textarea.value) ? textarea.value.trim() : '';
+            if (!text) {
+                document.getElementById('hypotheses').innerHTML = '<div style="padding: 20px; text-align: center; color: #856404;">Enter or paste lab text above, then click Analyze.</div>';
+                return;
+            }
+            try {
+                resetUI();
+                document.getElementById('hypotheses').innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">Analyzing text...</div>';
+                const healthRes = await fetch(`${API_BASE}/health`).catch(() => null);
+                if (healthRes && healthRes.ok) {
+                    const health = await healthRes.json();
+                    modelHealth = health;
+                    updateModelStatusIndicator();
+                    if (!health.lite_mode && (health.model_loading || !health.model_loaded)) {
+                        document.getElementById('hypotheses').innerHTML = '<div style="padding: 20px; text-align: center; color: #856404;">Model loading. Please wait..</div>';
+                        const analyzeBtn = document.getElementById('analyze-btn');
+                        if (analyzeBtn) analyzeBtn.disabled = true;
+                        try {
+                            await waitForModelReady();
+                        } finally {
+                            if (analyzeBtn) analyzeBtn.disabled = false;
+                        }
+                        document.getElementById('hypotheses').innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">Analyzing text...</div>';
+                    }
+                }
+                const response = await fetch(`${API_BASE}/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text })
+                });
+                if (!response.ok) {
+                    const errBody = await response.json().catch(() => ({}));
+                    const detail = errBody.detail || response.statusText;
+                    throw new Error(detail);
+                }
+                pipelineData = await response.json();
+                if (!pipelineData || !pipelineData.evidence_bundle) {
+                    throw new Error('Invalid response from backend');
+                }
+                events = pipelineData.events || [];
+                await checkModelStatus();
+                renderInitial(pipelineData);
+                if (autoPlay) {
+                    setTimeout(() => playEvents(), 800);
+                }
+            } catch (error) {
+                console.error('Analyze failed:', error);
+                const msg = error.message || 'Analyze failed';
+                document.getElementById('hypotheses').innerHTML = `<div style="padding: 20px; text-align: center; color: #f44336;">
+                    <strong>Analyze error</strong><br>${msg}<br>
+                    <small>Try listing labs like: Ferritin 12 ng/mL, Hb 10.5 g/dL, TSH 2.6 mIU/L</small>
+                </div>`;
             }
         }
 

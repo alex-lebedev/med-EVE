@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the current architecture of the Aletheia medical reasoning pipeline, focusing on the `/run` endpoint pipeline flow, response schema, event system, and MedGemma integration.
+This document describes the current architecture of the med-EVE medical reasoning pipeline, focusing on the `/run` endpoint pipeline flow, response schema, event system, and MedGemma integration.
 
 ## Pipeline Flow (`backend/app.py:/run`)
 
@@ -119,7 +119,7 @@ The `/run` endpoint returns a JSON object with the following structure:
 
 ## Agentic Architecture
 
-Aletheia uses MedGemma at **6 key decision points** throughout the pipeline, with agents deciding when to use the model vs. rule-based fallback:
+med-EVE uses MedGemma at **6 key decision points** throughout the pipeline, with agents deciding when to use the model vs. rule-based fallback:
 
 ### 1. Context Selection Agent
 - **When**: Complex cases (>3 markers, unusual combinations, comorbidities)

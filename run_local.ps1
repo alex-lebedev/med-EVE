@@ -1,6 +1,6 @@
-# Aletheia Local Demo Runner (Windows)
+# med-EVE Local Demo Runner (Windows)
 
-Write-Host "Starting Aletheia Demo..."
+Write-Host "Starting med-EVE Demo..."
 
 # Set environment
 $env:PYTHONPATH = "$PWD\backend"

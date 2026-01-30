@@ -1,4 +1,4 @@
-# Aletheia: Medical AI Reasoning with Knowledge Graphs and Guardrails
+# med-EVE: Medical AI Reasoning with Knowledge Graphs and Guardrails
 
 ## Problem Statement
 
@@ -14,7 +14,7 @@ Medical AI systems face critical challenges in clinical reasoning:
 
 5. **Auditability**: For regulatory compliance and clinical trust, every recommendation must be traceable to specific evidence and knowledge graph relationships.
 
-**Our Solution**: Aletheia addresses these challenges through:
+**Our Solution**: med-EVE addresses these challenges through:
 - **Knowledge Graph-Based Reasoning**: Explicit representation of medical relationships (markers → patterns → conditions → tests)
 - **Evidence Scoring**: Transparent scoring of candidate patterns based on lab values and graph relationships
 - **Guardrails**: Automatic safety checks that block unsafe recommendations
@@ -98,7 +98,7 @@ This hybrid approach combines the flexibility of LLM reasoning with the structur
 
 ### Multi-Layer Guardrails
 
-Aletheia implements a comprehensive guardrail system that operates at multiple levels:
+med-EVE implements a comprehensive guardrail system that operates at multiple levels:
 
 #### 1. **Rule-Based Guardrails** (`backend/core/guardrails.py`)
 
@@ -169,7 +169,7 @@ From evaluation on 8 test cases (see `backend/evals/run_evals.py`):
 ```bash
 # 1. Clone repository
 git clone <repo-url>
-cd aletheia-demo
+cd med-EVE
 
 # 2. Install dependencies
 pip install -r requirements.txt
@@ -240,7 +240,7 @@ make verify
 
 ### Evaluation Methodology
 
-We evaluate Aletheia on 8 synthetic test cases covering:
+We evaluate med-EVE on 8 synthetic test cases covering:
 - Clear diagnoses (iron deficiency, hypothyroidism)
 - Ambiguous cases (inflammation vs. deficiency)
 - Edge cases (missing units, borderline values)
@@ -308,7 +308,7 @@ Guardrail Pass Rate: 8/8 (100.0%)
 
 ## Conclusion
 
-Aletheia demonstrates a practical approach to safe, transparent medical AI reasoning by combining:
+med-EVE demonstrates a practical approach to safe, transparent medical AI reasoning by combining:
 - **Knowledge graphs** for structured reasoning
 - **LLM reasoning** (MedGemma) for flexible hypothesis generation
 - **Multi-layer guardrails** for safety

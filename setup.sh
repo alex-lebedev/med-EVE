@@ -1,9 +1,9 @@
 #!/bin/bash
-# Quick setup script for Aletheia Demo
+# Quick setup script for med-EVE Demo
 
 set -e  # Exit on error
 
-echo "🚀 Setting up Aletheia Demo..."
+echo "🚀 Setting up med-EVE Demo..."
 echo ""
 
 # Check Python

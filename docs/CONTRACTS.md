@@ -1,6 +1,6 @@
 # Contract Definitions
 
-This document defines the target contracts (data structures and protocols) for the Aletheia medical reasoning pipeline. These contracts represent the intended API surface and data flow between components.
+This document defines the target contracts (data structures and protocols) for the med-EVE medical reasoning pipeline. These contracts represent the intended API surface and data flow between components.
 
 ## CaseCard Contract
 

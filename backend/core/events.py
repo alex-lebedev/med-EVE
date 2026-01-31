@@ -24,6 +24,8 @@ class EventType(str, Enum):
     MODEL_CALLED = "MODEL_CALLED"
     AGENT_DECISION = "AGENT_DECISION"
     MODEL_WEIGHT_ASSIGNED = "MODEL_WEIGHT_ASSIGNED"
+    MODEL_REASONING_START = "MODEL_REASONING_START"
+    MODEL_REASONING_END = "MODEL_REASONING_END"
 
 class Event(BaseModel):
     ts: float
@@ -103,3 +105,18 @@ def model_weight_assigned(events, step, marker, status, relation, pattern_id, we
         "weight": weight,
         "rationale": rationale
     })
+
+
+def model_reasoning_start(events, step, label: str = "MedGemma is reasoning..."):
+    """Emit event when model reasoning starts (for UI indicator)."""
+    emit_event(events, step, EventType.MODEL_REASONING_START, {"label": label})
+
+
+def model_reasoning_end(events, step, label: str = "", response_time_ms: float = 0):
+    """Emit event when model reasoning ends (for UI indicator)."""
+    payload = {}
+    if label:
+        payload["label"] = label
+    if response_time_ms:
+        payload["response_time_ms"] = response_time_ms
+    emit_event(events, step, EventType.MODEL_REASONING_END, payload)

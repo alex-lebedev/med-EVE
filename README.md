@@ -24,7 +24,11 @@ med-EVE is an **agentic medical reasoning pipeline** (Evidence Vector Engine) wh
 - **Multi-Layer Guardrails**: Automatic safety checks with model-generated explanations
 - **Event-Driven Transparency**: Complete audit trail showing all model calls and decisions
 - **Deterministic Behavior**: Consistent outputs with rule-based fallback
-- **Hybrid Approach**: Combines structured knowledge graphs with flexible LLM reasoning
+- **Hybrid Architecture**: KG-grounded reasoning with model-augmented ranking and explanations (hypotheses from rules; MedGemma ranks and explains top hypotheses)
+
+### Functional medicine framework
+
+med-EVE uses a **single knowledge graph** and **anchor-based context**: any case maps into the same decision system. Signals (pattern/condition nodes) are derived from the subgraph reachable from case markers, with rule-based fallback. Markers not in the KG get **dynamic nodes** and optional link suggestions; these are returned as **suggested_kg_additions** for review. A short **case impression** (patient overview) is generated after guardrails and shown in the UI and saved output. Prompts and reasoning follow a holistic / functional medicine view (multi-system: thyroid, iron, immune, lipids). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/CONTRACTS.md](docs/CONTRACTS.md) for output schema.
 
 ### No OpenAI — local MedGemma only
 
@@ -135,6 +139,54 @@ See [models/README.md](models/README.md) if you want to put a model in the repo 
 4. **First run** – The backend will log “Loading model from HuggingFace…” and download (can take 30+ minutes for 27B). The progress bar may stay at 0% for a while; you can confirm activity with `huggingface-cli scan-cache` or by watching `~/.cache/huggingface`.
 
 5. **When ready** – The backend logs “Model loaded successfully from repo…” or “Model loaded successfully from HuggingFace.” You can call `GET /health` and check `model_loaded`, `lite_mode`, and `model_source` (e.g. `"local"` when using `models/medgemma-4b-it`).
+
+### Device (Apple Silicon / laptop reliability)
+
+On Apple Silicon (M1/M2/M3), the app uses **CPU by default** for the model to avoid MPS-related errors (e.g. "Placeholder storage has not been allocated on MPS device"). To try MPS, set `export USE_MPS=1` before `make demo`. To force CPU on any platform, set `export MEDGEMMA_DEVICE=cpu`.
+
+### Testing model text generation
+
+To verify the model loads and produces text (e.g. to compare CPU vs MPS), run the minimal generation test from the repo root:
+
+- **CPU (default on Apple Silicon):** `MEDGEMMA_DEVICE=cpu make model-test` or `MODE=model python scripts/test_model_generate.py --device cpu`
+- **MPS (Apple Silicon only):** `USE_MPS=1 make model-test` or `MODE=model python scripts/test_model_generate.py --device mps`
+
+First run loads the model (30–60+ s); then a short answer is generated. You should see the device and "OK: Model generated text." If it hangs in generation or prints "FAIL: No text generated.", the issue is device/runtime (e.g. MPS) or model output.
+
+### Why does the first case take so long?
+
+In model mode, each case runs several model calls (hypothesis generation, often action generation, case impression, and sometimes context selection, symptom mapping, evidence weighting, test recommendation, guardrail explanation). Pipeline agents use **max_tokens=384** by default (configurable via `MEDGEMMA_MAX_TOKENS`) so runs complete reliably on laptop/MPS. Expect **2–5+ minutes per case** on a laptop (CPU or MPS), especially the first case. The simple `make model-test` runs only one short generation (64 tokens), so it finishes quickly after load.
+
+To reduce model calls further while keeping graph updates and hypotheses: set `USE_SYMPTOM_MAPPER_MODEL=0` (rule-based symptom mapping) and/or `USE_CASE_IMPRESSION_MODEL=0` (rule-based case impression). By default, context selection, evidence weighting, test recommendation, and guardrail explanation are **disabled**; enable with:
+- `USE_CONTEXT_SELECTION_MODEL=1`
+- `USE_EVIDENCE_WEIGHTING_MODEL=1`
+- `USE_TEST_RECOMMENDATION_MODEL=1`
+- `USE_GUARDRAIL_EXPLANATION_MODEL=1`
+
+Novel insights are generated only when `USE_NOVEL_INSIGHT_MODEL=1` (or `force`), and will be labeled "Outside KG" in the UI.
+
+Response fields added for novelty:
+- `reasoner_output.novel_insights`
+- `reasoner_output.novel_actions`
+- `reasoner_output.provenance`
+
+### Backend port and debug endpoints
+
+The backend is expected to run on **127.0.0.1:8000** (the frontend uses `http://localhost:8000` as its API base). Useful debug endpoints:
+
+- `POST /debug/ping` — quick check that POST requests reach the backend.
+- `POST /debug/raw-run` — returns the raw request body preview to confirm JSON is received.
+
+Recommended stability flags during troubleshooting:
+
+- `MEDGEMMA_MAX_TOKENS=384` (agent outputs stay compact and faster)
+- `USE_SYMPTOM_MAPPER_MODEL=0`
+- `USE_CASE_IMPRESSION_MODEL=0`
+- `USE_CONTEXT_SELECTION_MODEL=0`
+- `USE_EVIDENCE_WEIGHTING_MODEL=0`
+- `USE_TEST_RECOMMENDATION_MODEL=0`
+- `USE_GUARDRAIL_EXPLANATION_MODEL=0`
+- `USE_NOVEL_INSIGHT_MODEL=0`
 
 ### Switching between lite and model / between models
 

@@ -21,6 +21,8 @@ nodes = [
     {"id": "m_ldl", "type": "Marker", "label": "Low-Density Lipoprotein (LDL)", "description": "Bad cholesterol."},
     {"id": "m_hdl", "type": "Marker", "label": "High-Density Lipoprotein (HDL)", "description": "Good cholesterol."},
     {"id": "m_tg", "type": "Marker", "label": "Triglycerides", "description": "Blood fat level."},
+    {"id": "m_wbc", "type": "Marker", "label": "White Blood Cell Count (WBC)", "description": "Leukocyte count; elevated in infection or inflammation."},
+    {"id": "m_glucose", "type": "Marker", "label": "Glucose", "description": "Blood glucose; low can occur in acute illness or fasting."},
 
     # Patterns
     {"id": "p_inflam_iron_seq", "type": "Pattern", "label": "Inflammation-mediated iron sequestration", "description": "Inflammation causes iron to be stored in macrophages, reducing serum iron."},
@@ -52,6 +54,24 @@ edges = [
         "rationale": "Elevated hsCRP indicates inflammation, which can sequester iron in macrophages.",
         "source_label": "review",
         "source_note": "Curated from hematology guidelines on anemia of chronic disease."
+    },
+    {
+        "id": "e_001b",
+        "from": "m_wbc",
+        "to": "p_inflam_iron_seq",
+        "relation": "SUPPORTS",
+        "rationale": "Elevated WBC can support inflammatory context; leukocytosis often accompanies acute or chronic inflammation.",
+        "source_label": "review",
+        "source_note": "Hematology guidelines on inflammation and anemia."
+    },
+    {
+        "id": "e_001c",
+        "from": "m_glucose",
+        "to": "p_inflam_iron_seq",
+        "relation": "SUPPORTS",
+        "rationale": "Low glucose can occur in acute illness or stress; non-specific supportive of inflammatory context.",
+        "source_label": "review",
+        "source_note": "General medicine on illness and glucose."
     },
     {
         "id": "e_002",

@@ -69,15 +69,21 @@ def normalize_labs(raw_labs):
     for lab in raw_labs:
         marker = normalize_marker(lab["marker"])
         value, unit = normalize_unit(marker, lab["value"], lab["unit"])
-        status = get_status(value, lab["ref_low"], lab["ref_high"])
+        ref_low, ref_high = lab["ref_low"], lab["ref_high"]
+        from_fallback = lab.get("from_fallback", False)
+        if from_fallback or (ref_low == 0 and ref_high == 0):
+            status = "REFERENCE_UNKNOWN"
+        else:
+            status = get_status(value, ref_low, ref_high)
         normalized_lab = {
             "marker": marker,
             "value": round(value, 2),
-            "unit": unit,
-            "ref_low": lab["ref_low"],
-            "ref_high": lab["ref_high"],
+            "unit": unit or "",
+            "ref_low": ref_low,
+            "ref_high": ref_high,
             "status": status,
-            "timestamp": lab["timestamp"]
+            "timestamp": lab["timestamp"],
+            "from_fallback": from_fallback,
         }
         normalized.append(normalized_lab)
     return normalized

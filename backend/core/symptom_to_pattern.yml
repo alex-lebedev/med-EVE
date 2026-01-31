@@ -1,0 +1,55 @@
+# Default symptom/free-text -> pattern mapping (rule-based suggestion; MedGemma judges keep/change).
+# Each key is a keyword (lowercase); value is list of { pattern_id, relation, rationale }.
+fatigue:
+  - pattern_id: p_inflam_iron_seq
+    relation: SUPPORTS
+    rationale: "Fatigue commonly accompanies anemia of inflammation."
+  - pattern_id: p_iron_def
+    relation: SUPPORTS
+    rationale: "Fatigue is a common symptom of iron deficiency anemia."
+tired:
+  - pattern_id: p_inflam_iron_seq
+    relation: SUPPORTS
+    rationale: "Tiredness often accompanies chronic inflammation and anemia."
+vegan:
+  - pattern_id: p_iron_def
+    relation: SUPPORTS
+    rationale: "Plant-based diet can increase risk of iron deficiency."
+vegetarian:
+  - pattern_id: p_iron_def
+    relation: SUPPORTS
+    rationale: "Vegetarian diet can increase risk of iron deficiency."
+elderly:
+  - pattern_id: p_inflam_iron_seq
+    relation: SUPPORTS
+    rationale: "Elderly patients are at higher risk for anemia of chronic disease."
+chronic disease:
+  - pattern_id: p_inflam_iron_seq
+    relation: SUPPORTS
+    rationale: "Chronic disease is associated with inflammation-mediated iron sequestration."
+inflammatory:
+  - pattern_id: p_inflam_iron_seq
+    relation: SUPPORTS
+    rationale: "Explicit inflammatory context supports inflammation-mediated iron pattern."
+shortness of breath:
+  - pattern_id: p_iron_def
+    relation: SUPPORTS
+    rationale: "Shortness of breath can occur in anemia due to reduced oxygen carrying capacity."
+  - pattern_id: p_inflam_iron_seq
+    relation: SUPPORTS
+    rationale: "Shortness of breath can occur in anemia of inflammation."
+weakness:
+  - pattern_id: p_iron_def
+    relation: SUPPORTS
+    rationale: "Weakness is a common symptom of iron deficiency."
+  - pattern_id: p_inflam_iron_seq
+    relation: SUPPORTS
+    rationale: "Weakness can accompany anemia of inflammation."
+cold intolerance:
+  - pattern_id: p_hypothyroid
+    relation: SUPPORTS
+    rationale: "Cold intolerance is a classic symptom of hypothyroidism."
+weight gain:
+  - pattern_id: p_hypothyroid
+    relation: SUPPORTS
+    rationale: "Weight gain can be associated with hypothyroidism."

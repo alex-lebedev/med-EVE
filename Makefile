@@ -1,7 +1,9 @@
-.PHONY: verify test evals help run demo stop model-demo
+.PHONY: verify test evals help run demo stop model-demo model-test hypothesis-test optimize-experiment
 
-# Prefer venv/.venv python so "make demo" works without activating; fallback to python3 (macOS)
-PYTHON := $(shell if [ -f venv/bin/python ]; then echo venv/bin/python; elif [ -f .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi)
+# Prefer venv/.venv python so "make demo" works without activating; fallback to python3 (macOS).
+# Use absolute path so "make run" / "make demo" work after "cd backend".
+ROOT_DIR := $(CURDIR)
+PYTHON := $(shell if [ -f "$(ROOT_DIR)/venv/bin/python" ]; then echo "$(ROOT_DIR)/venv/bin/python"; elif [ -f "$(ROOT_DIR)/.venv/bin/python" ]; then echo "$(ROOT_DIR)/.venv/bin/python"; else echo python3; fi)
 
 # Default target
 help:
@@ -12,6 +14,9 @@ help:
 	@echo "  run     - Start backend server only"
 	@echo "  demo    - Start backend + frontend and open browser (auto-play gotcha case)"
 	@echo "  model-demo - Start demo with model enabled (MODE=model)"
+	@echo "  model-test - Test model load and text generation (MODE=model; use MEDGEMMA_DEVICE=cpu or USE_MPS=1)"
+	@echo "  hypothesis-test - Run hypothesis_generation prompt; saves prompt and raw output to backend/output/"
+	@echo "  optimize-experiment - Run optimization experiment (baseline/fast/quality configs; MODE=model)"
 	@echo "  stop    - Stop all running servers"
 
 # Run both pytest and evals
@@ -40,7 +45,7 @@ run:
 		echo "✓ MODE=$$MODE detected"; \
 	fi
 	@echo "Press Ctrl+C to stop"
-	@cd backend && export PYTHONPATH=$$(pwd) && $(PYTHON) -m uvicorn app:app --host 0.0.0.0 --port 8000
+	@cd backend && export PYTHONPATH=$$(pwd) && $(PYTHON) -m uvicorn app:app --host 127.0.0.1 --port 8000
 
 # Start demo (backend + frontend + browser)
 demo:
@@ -67,7 +72,7 @@ demo:
 	else \
 		echo "✓ MODE=$$MODE detected - model will be enabled"; \
 	fi; \
-	cd $$ROOT_DIR/backend && export PYTHONPATH=$$ROOT_DIR/backend && export MODE=$$MODE && $$PY -m uvicorn app:app --host 0.0.0.0 --port 8000 > /tmp/backend.log 2>&1 & \
+	cd $$ROOT_DIR/backend && export PYTHONPATH=$$ROOT_DIR/backend && export MODE=$$MODE && export USE_MPS=$$USE_MPS && export MEDGEMMA_DEVICE=$$MEDGEMMA_DEVICE && $$PY -m uvicorn app:app --host 127.0.0.1 --port 8000 > /tmp/backend.log 2>&1 & \
 	BACKEND_PID=$$!; \
 	echo "Backend starting (PID: $$BACKEND_PID)..."; \
 	sleep 4; \
@@ -107,6 +112,18 @@ demo:
 		fi; \
 		sleep 2; \
 	done
+
+# Test model load and text generation (run from repo root; optional: MEDGEMMA_DEVICE=cpu or USE_MPS=1)
+model-test:
+	@export PYTHONPATH=$$(pwd)/backend && export MODE=model && export USE_MPS=$$USE_MPS && export MEDGEMMA_DEVICE=$$MEDGEMMA_DEVICE && $(PYTHON) scripts/test_model_generate.py
+
+# Run hypothesis_generation prompt with one case; saves prompt and raw output to backend/output/
+hypothesis-test:
+	@export PYTHONPATH=$$(pwd)/backend && export MODE=model && export USE_MPS=$$USE_MPS && export MEDGEMMA_DEVICE=$$MEDGEMMA_DEVICE && $(PYTHON) scripts/test_hypothesis_prompt.py
+
+# Run optimization experiment: baseline vs fast vs quality configs (requires MODE=model / loaded model)
+optimize-experiment:
+	@cd backend && export PYTHONPATH=$$(pwd) && export MODE=model && export USE_MPS=$$USE_MPS && export MEDGEMMA_DEVICE=$$MEDGEMMA_DEVICE && $(PYTHON) evals/run_optimization_experiment.py --experiment --cases case_02_anemia_of_inflammation_gotcha case_04_primary_hypothyroid
 
 # Start demo with model enabled
 model-demo:

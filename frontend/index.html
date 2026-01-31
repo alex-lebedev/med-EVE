@@ -268,6 +268,11 @@
             background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
         }
 
+        .lab-item.unknown {
+            border-left-color: #9e9e9e;
+            background: linear-gradient(135deg, #f5f5f5 0%, #eeeeee 100%);
+        }
+
         .lab-item.pulse {
             animation: pulseGlow 1.5s ease-in-out infinite;
             box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
@@ -582,6 +587,16 @@
             display: flex;
             flex-direction: column;
             overflow-y: auto;
+        }
+
+        .case-overview-card {
+            background: linear-gradient(135deg, #f0f4ff 0%, #e8ecf8 100%);
+            border: 1px solid #c5cae9;
+            border-radius: 10px;
+            padding: 12px 14px;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #37474f;
         }
 
         .tab-buttons {
@@ -945,6 +960,34 @@
             color: #2e7d32;
             border: 1px solid #a5d6a7;
         }
+
+        /* MedGemma reasoning indicator (shown during model calls, before graph loads) */
+        #reasoning-banner {
+            display: none;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border-bottom: 2px solid #2196F3;
+            font-size: 14px;
+            font-weight: 600;
+            color: #1565C0;
+            box-shadow: 0 2px 8px rgba(33, 150, 243, 0.2);
+        }
+        #reasoning-banner.visible {
+            display: flex;
+        }
+        #reasoning-banner .reasoning-spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(33, 150, 243, 0.3);
+            border-top-color: #2196F3;
+            border-radius: 50%;
+            animation: reasoning-spin 0.8s linear infinite;
+        }
+        @keyframes reasoning-spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -985,6 +1028,12 @@
         <span>Current case: <span id="current-case-label">none</span></span>
         <span>Saved to: <span id="output-path-label">—</span></span>
         <button type="button" id="clear-current-case-btn" onclick="clearCurrentCase()" style="margin-left: auto; padding: 4px 10px; font-size: 11px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer;">Clear current case</button>
+    </div>
+
+    <!-- MedGemma reasoning indicator (shown during model ranking/reasoning/impression, hidden when final) -->
+    <div id="reasoning-banner" aria-live="polite">
+        <span class="reasoning-spinner"></span>
+        <span id="reasoning-banner-label">MedGemma is reasoning…</span>
     </div>
 
     <!-- Timeline -->
@@ -1090,6 +1139,16 @@
 
         <!-- Right: Tabs -->
         <div id="right">
+            <div id="case-overview-wrap" style="display: none; margin-bottom: 12px;">
+                <h3 style="font-size: 14px; color: #495057; margin-bottom: 8px;">Case overview</h3>
+                <div id="case-overview" class="case-overview-card"></div>
+            </div>
+            <div id="unlinked-markers-wrap" style="display: none; margin-bottom: 12px;">
+                <div id="unlinked-markers-note" class="case-overview-card" style="border-color: #ffb74d; background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);"></div>
+            </div>
+            <div id="unmappable-inputs-wrap" style="display: none; margin-bottom: 12px;">
+                <div id="unmappable-inputs-note" class="case-overview-card" style="border-color: #ef5350; background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);"></div>
+            </div>
             <div class="tab-buttons">
                 <button class="tab-button active" onclick="showTab('clinician')">Clinician</button>
                 <button class="tab-button" onclick="showTab('patient')">Patient</button>
@@ -1099,6 +1158,8 @@
             <div id="clinician" class="tab-content active">
                 <h3>Hypotheses</h3>
                 <div id="hypotheses"></div>
+                <h3 style="margin-top: 16px;">Novel Insights</h3>
+                <div id="novel-insights"></div>
                 <div id="reasoning-trace">
                     <div id="reasoning-trace-toggle">
                         <input type="checkbox" id="trace-checkbox" onclick="toggleReasoningTrace(event)">
@@ -1110,6 +1171,8 @@
             <div id="patient" class="tab-content">
                 <h3>Patient Actions</h3>
                 <div id="actions"></div>
+                <h3 style="margin-top: 16px;">Novel Actions</h3>
+                <div id="novel-actions"></div>
             </div>
             <div id="guidance" class="tab-content">
                 <h3>Step-by-Step Guidance</h3>
@@ -1148,6 +1211,12 @@
         const API_BASE = 'http://localhost:8000';
         let modelHealth = null;
         let lastCurrentCaseId = null;
+        let currentLoadId = 0;
+
+        function safeLower(v) {
+            if (v == null) return '';
+            return (typeof v === 'string') ? v.toLowerCase() : '';
+        }
 
         function updateCurrentCaseDisplay(caseId) {
             lastCurrentCaseId = caseId || null;
@@ -1371,15 +1440,109 @@
             throw new Error('Model did not become ready in time. Check server logs.');
         }
 
+        async function streamPipeline(url, payload) {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+                const errBody = await response.json().catch(() => ({}));
+                const detail = errBody.detail || response.statusText;
+                throw new Error(detail);
+            }
+
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('text/event-stream') || !response.body) {
+                const data = await response.json();
+                return data;
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let finalResult = null;
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop() || '';
+                for (const part of parts) {
+                    const line = part.trim();
+                    if (!line.startsWith('data:')) continue;
+                    const jsonStr = line.replace(/^data:\s*/, '');
+                    if (!jsonStr) continue;
+                    let msg;
+                    try {
+                        msg = JSON.parse(jsonStr);
+                    } catch (e) {
+                        continue;
+                    }
+                    if (msg.type === 'events' && Array.isArray(msg.events)) {
+                        msg.events.forEach(ev => {
+                            events.push(ev);
+                            handleEvent(ev);
+                            if (ev.type === 'MODEL_REASONING_START') {
+                                const banner = document.getElementById('reasoning-banner');
+                                const labelEl = document.getElementById('reasoning-banner-label');
+                                if (banner) banner.classList.add('visible');
+                                if (labelEl && ev.payload && ev.payload.label) labelEl.textContent = ev.payload.label;
+                            } else if (ev.type === 'MODEL_REASONING_END') {
+                                const banner = document.getElementById('reasoning-banner');
+                                if (banner) banner.classList.remove('visible');
+                            }
+                        });
+                    } else if (msg.type === 'partial') {
+                        const partial = msg.payload || {};
+                        const ro = partial.reasoner_output;
+                        if (!pipelineData) pipelineData = {};
+                        pipelineData.reasoner_output = ro && typeof ro === 'object' ? ro : {};
+                        const hyps = Array.isArray(pipelineData.reasoner_output.hypotheses) ? pipelineData.reasoner_output.hypotheses : [];
+                        const acts = Array.isArray(pipelineData.reasoner_output.patient_actions) ? pipelineData.reasoner_output.patient_actions : [];
+                        const ni = Array.isArray(pipelineData.reasoner_output.novel_insights) ? pipelineData.reasoner_output.novel_insights : [];
+                        const na = Array.isArray(pipelineData.reasoner_output.novel_actions) ? pipelineData.reasoner_output.novel_actions : [];
+                        renderHypotheses(hyps, pipelineData.evidence_bundle || {}, pipelineData.model_usage);
+                        renderPatientActions(acts);
+                        renderNovelInsights(ni);
+                        renderNovelActions(na);
+                    } else if (msg.type === 'final') {
+                        const banner = document.getElementById('reasoning-banner');
+                        if (banner) banner.classList.remove('visible');
+                        const payload = msg.payload;
+                        if (payload && payload.reasoner_output) {
+                            if (!Array.isArray(payload.reasoner_output.hypotheses)) {
+                                payload.reasoner_output.hypotheses = [];
+                            }
+                        }
+                        finalResult = payload;
+                    } else if (msg.type === 'error') {
+                        throw new Error(msg.message || 'Streaming error');
+                    }
+                }
+            }
+            return finalResult;
+        }
+
         async function runCase(caseId, autoPlay = false) {
+            const thisLoadId = ++currentLoadId;
+            const loadBtn = document.querySelector('#case-selector button');
+            const caseSelect = document.getElementById('case-select');
             try {
                 resetUI();
+                events = [];
+                pipelineData = null;
+                
+                if (loadBtn) loadBtn.disabled = true;
+                if (caseSelect) caseSelect.disabled = true;
                 
                 // Show loading state
                 document.getElementById('hypotheses').innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">Loading case...</div>';
                 
                 // When model mode, wait for model to be ready before calling /run
                 const healthRes = await fetch(`${API_BASE}/health`).catch(() => null);
+                if (thisLoadId !== currentLoadId) return;
                 if (healthRes && healthRes.ok) {
                     const health = await healthRes.json();
                     modelHealth = health;
@@ -1387,52 +1550,39 @@
                     if (!health.lite_mode && (health.model_loading || !health.model_loaded)) {
                         document.getElementById('hypotheses').innerHTML = '<div style="padding: 20px; text-align: center; color: #856404;">Model loading. Please wait..</div>';
                         const demoBtn = document.getElementById('demo-mode-btn');
-                        const loadBtn = document.querySelector('#case-selector button');
-                        const caseSelect = document.getElementById('case-select');
                         if (demoBtn) demoBtn.disabled = true;
-                        if (loadBtn) loadBtn.disabled = true;
-                        if (caseSelect) caseSelect.disabled = true;
                         try {
                             await waitForModelReady();
                         } finally {
                             if (demoBtn) demoBtn.disabled = false;
-                            if (loadBtn) loadBtn.disabled = false;
-                            if (caseSelect) caseSelect.disabled = false;
                         }
+                        if (thisLoadId !== currentLoadId) return;
                         document.getElementById('hypotheses').innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">Loading case...</div>';
                     }
                 }
                 
-                const response = await fetch(`${API_BASE}/run`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ case_id: caseId })
-                });
+                pipelineData = await streamPipeline(`${API_BASE}/run/stream`, { case_id: caseId });
                 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                pipelineData = await response.json();
+                if (thisLoadId !== currentLoadId) return;
                 
                 if (!pipelineData || !pipelineData.evidence_bundle) {
                     throw new Error('Invalid response from backend');
                 }
+                if (!pipelineData.reasoner_output || !Array.isArray(pipelineData.reasoner_output.hypotheses)) {
+                    document.getElementById('hypotheses').innerHTML = '<div style="padding: 20px; text-align: center; color: #f44336;">Invalid response shape. Missing or invalid reasoner output.</div>';
+                    return;
+                }
                 
-                events = pipelineData.events || [];
+                events = pipelineData.events || events;
                 
-                // Refresh health check immediately after a run to get accurate model status
                 await checkModelStatus();
+                if (thisLoadId !== currentLoadId) return;
                 
                 renderInitial(pipelineData);
                 updateCurrentCaseDisplay(pipelineData.current_case_id ?? pipelineData.case_id);
                 updateOutputPathDisplay(pipelineData.output_path ?? null);
-                if (autoPlay) {
-                    setTimeout(() => {
-                        playEvents();
-                    }, 800);
-                }
             } catch (error) {
+                if (thisLoadId !== currentLoadId) return;
                 console.error('Failed to run case:', error);
                 const is503 = error.message && error.message.includes('503');
                 const msg = is503
@@ -1444,6 +1594,9 @@
                     <small>Make sure the backend is running on http://localhost:8000</small>
                 </div>`;
                 alert(`Failed to load case: ${msg}\n\nMake sure the backend is running on http://localhost:8000`);
+            } finally {
+                if (loadBtn) loadBtn.disabled = false;
+                if (caseSelect) caseSelect.disabled = false;
             }
         }
 
@@ -1456,6 +1609,7 @@
             }
             try {
                 resetUI();
+                events = [];
                 document.getElementById('hypotheses').innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">Analyzing text...</div>';
                 const healthRes = await fetch(`${API_BASE}/health`).catch(() => null);
                 if (healthRes && healthRes.ok) {
@@ -1475,28 +1629,19 @@
                     }
                 }
                 const mergeWithCurrent = document.getElementById('analyze-mode-merge')?.checked === true;
-                const response = await fetch(`${API_BASE}/analyze`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: text, merge_with_current: mergeWithCurrent })
-                });
-                if (!response.ok) {
-                    const errBody = await response.json().catch(() => ({}));
-                    const detail = errBody.detail || response.statusText;
-                    throw new Error(detail);
-                }
-                pipelineData = await response.json();
+                pipelineData = await streamPipeline(`${API_BASE}/analyze/stream`, { text: text, merge_with_current: mergeWithCurrent });
                 if (!pipelineData || !pipelineData.evidence_bundle) {
                     throw new Error('Invalid response from backend');
                 }
-                events = pipelineData.events || [];
+                if (!pipelineData.reasoner_output || !Array.isArray(pipelineData.reasoner_output.hypotheses)) {
+                    document.getElementById('hypotheses').innerHTML = '<div style="padding: 20px; text-align: center; color: #f44336;">Invalid response shape. Missing or invalid reasoner output.</div>';
+                    return;
+                }
+                events = pipelineData.events || events;
                 await checkModelStatus();
                 renderInitial(pipelineData);
                 updateCurrentCaseDisplay(pipelineData.current_case_id ?? pipelineData.case_id);
                 updateOutputPathDisplay(pipelineData.output_path ?? null);
-                if (autoPlay) {
-                    setTimeout(() => playEvents(), 800);
-                }
             } catch (error) {
                 console.error('Analyze failed:', error);
                 const msg = error.message || 'Analyze failed';
@@ -1521,18 +1666,43 @@
             document.querySelectorAll('.step-chip').forEach(chip => {
                 chip.classList.remove('active', 'completed');
             });
+            const durationIds = ['LAB_NORMALIZE', 'CONTEXT_SELECT', 'EVIDENCE_SCORE', 'REASON', 'GUARDRAILS', 'FINAL'];
+            durationIds.forEach(step => {
+                const el = document.getElementById('duration-' + step);
+                if (el) el.textContent = '';
+            });
             document.getElementById('play-pause-btn').textContent = '▶ Play';
             document.getElementById('play-pause-btn').classList.remove('active');
             document.getElementById('trust-moments').innerHTML = '';
             highlightedNodes.clear();
             highlightedEdges.clear();
             
+            // Destroy graph so next load starts from scratch
+            if (cy) {
+                try { cy.destroy(); } catch (e) {}
+                cy = null;
+            }
+            const cyEl = document.getElementById('cy');
+            if (cyEl) {
+                cyEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#6c757d;font-size:14px;">Loading case…</div>';
+            }
+            
+            // Clear all case-specific panels so Load always starts from scratch
+            const caseOverviewWrap = document.getElementById('case-overview-wrap');
+            const caseOverview = document.getElementById('case-overview');
+            if (caseOverviewWrap) caseOverviewWrap.style.display = 'none';
+            if (caseOverview) caseOverview.textContent = '';
+            const guidanceContent = document.getElementById('guidance-content');
+            if (guidanceContent) guidanceContent.innerHTML = '<div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">Load a case to see step-by-step guidance</div>';
+            const nextStepsContent = document.getElementById('next-steps-content');
+            if (nextStepsContent) nextStepsContent.innerHTML = '<div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">Load a case to see recommended next steps</div>';
+            const abnormalLabsEl = document.getElementById('abnormal-labs');
+            if (abnormalLabsEl) abnormalLabsEl.innerHTML = '';
+            
             // Reset reasoning trace
             const traceCheckbox = document.getElementById('trace-checkbox');
             const traceContent = document.getElementById('reasoning-trace-content');
-            if (traceCheckbox) {
-                traceCheckbox.checked = false;
-            }
+            if (traceCheckbox) traceCheckbox.checked = false;
             if (traceContent) {
                 traceContent.classList.remove('active');
                 traceContent.innerHTML = '';
@@ -1541,49 +1711,145 @@
             // Clear hypotheses and actions
             document.getElementById('hypotheses').innerHTML = '';
             document.getElementById('actions').innerHTML = '';
+            document.getElementById('novel-insights').innerHTML = '';
+            document.getElementById('novel-actions').innerHTML = '';
+
+            // Hide reasoning banner
+            const reasoningBanner = document.getElementById('reasoning-banner');
+            if (reasoningBanner) reasoningBanner.classList.remove('visible');
+            
+            stepDurations = {};
         }
 
         function renderInitial(data) {
-            // Render abnormal labs
-            const abnormalLabs = data.normalized_labs.filter(lab => lab.status !== 'NORMAL');
-            const labsHtml = abnormalLabs.map(lab => `
-                <div class="lab-item ${lab.status}" data-marker="${lab.marker}">
-                    <div class="marker-name">${lab.marker}</div>
-                    <div class="lab-value">${lab.value} ${lab.unit} (${lab.status})</div>
+            if (!data) return;
+
+            // Update Patient, Guidance, Next Steps (and hypotheses) first so they show even if graph build throws
+            if (data.reasoner_output) {
+                renderHypotheses(data.reasoner_output.hypotheses || [], data.evidence_bundle || {}, data.model_usage);
+                renderPatientActions(data.reasoner_output.patient_actions || []);
+                renderNovelInsights(data.reasoner_output.novel_insights || []);
+                renderNovelActions(data.reasoner_output.novel_actions || []);
+                renderGuidance(data);
+                renderNextSteps(data);
+            }
+
+            // Case overview (patient impression) when present
+            const wrap = document.getElementById('case-overview-wrap');
+            const block = document.getElementById('case-overview');
+            if (data.case_impression) {
+                block.textContent = data.case_impression;
+                wrap.style.display = 'block';
+            } else {
+                block.textContent = '';
+                wrap.style.display = 'none';
+            }
+
+            // Unlinked markers (added to graph but not yet linked to patterns)
+            const unlinkedWrap = document.getElementById('unlinked-markers-wrap');
+            const unlinkedNote = document.getElementById('unlinked-markers-note');
+            if (data.unlinked_markers && data.unlinked_markers.length > 0) {
+                unlinkedNote.textContent = 'The following were added to the graph but are not yet linked to patterns: ' + data.unlinked_markers.join(', ') + '.';
+                unlinkedWrap.style.display = 'block';
+            } else {
+                unlinkedNote.textContent = '';
+                unlinkedWrap.style.display = 'none';
+            }
+
+            // Unmappable inputs (could not be mapped to the graph)
+            const unmappableWrap = document.getElementById('unmappable-inputs-wrap');
+            const unmappableNote = document.getElementById('unmappable-inputs-note');
+            if (data.unmappable_inputs && data.unmappable_inputs.length > 0) {
+                unmappableNote.textContent = 'The following could not be mapped to the graph: ' + data.unmappable_inputs.join(', ') + '. Consider adding labs or standard terms.';
+                unmappableWrap.style.display = 'block';
+            } else {
+                unmappableNote.textContent = '';
+                unmappableWrap.style.display = 'none';
+            }
+
+            // Render abnormal labs (status display: Reference unknown when uncertain; show ref range when available)
+            const normalizedLabs = data.normalized_labs || [];
+            const abnormalLabs = normalizedLabs.filter(lab => lab && lab.status !== 'NORMAL');
+            const labsHtml = abnormalLabs.map(lab => {
+                const statusDisplay = lab.status === 'REFERENCE_UNKNOWN' ? 'Reference unknown' : (lab.status || '');
+                const labClass = lab.status === 'REFERENCE_UNKNOWN' ? 'unknown' : (lab.status || '');
+                const hasRef = lab.ref_low != null && lab.ref_high != null && (lab.ref_low !== 0 || lab.ref_high !== 0);
+                const refStr = hasRef ? `; ref ${lab.ref_low}–${lab.ref_high} ${(lab.unit || '').trim()}`.trim() : '';
+                return `
+                <div class="lab-item ${labClass}" data-marker="${lab.marker || ''}">
+                    <div class="marker-name">${lab.marker || ''}</div>
+                    <div class="lab-value">${lab.value} ${(lab.unit || '').trim()} (${statusDisplay}${refStr})</div>
                 </div>
-            `).join('');
-            document.getElementById('abnormal-labs').innerHTML = labsHtml;
+            `}).join('');
+            const abnormalLabsEl = document.getElementById('abnormal-labs');
+            if (abnormalLabsEl) abnormalLabsEl.innerHTML = labsHtml;
 
-            // Build graph with enhanced styling
-            const elements = [];
-            const nodeMap = {};
-            
-            data.evidence_bundle.subgraph.nodes.forEach(node => {
-                nodeMap[node.id] = node;
-                const nodeData = {
-                    id: node.id,
-                    label: node.label,
-                    type: node.type
-                };
-                if (node.dynamic === true) nodeData.dynamic = true;
-                elements.push({ data: nodeData });
-            });
+            // Build graph only when evidence_bundle and subgraph exist with non-empty nodes/edges
+            const subgraph = data.evidence_bundle && data.evidence_bundle.subgraph;
+            const nodes = subgraph && Array.isArray(subgraph.nodes) ? subgraph.nodes : null;
+            const edges = subgraph && Array.isArray(subgraph.edges) ? subgraph.edges : null;
+            const hasGraphData = nodes && nodes.length > 0 && edges;
+            if (!hasGraphData) {
+                const cyEl = document.getElementById('cy');
+                if (cyEl) cyEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#6c757d;font-size:13px;">No graph data for this case.</div>';
+                if (cy) {
+                    try { cy.destroy(); } catch (e) {}
+                    cy = null;
+                }
+                extractStepDurations();
+                setTimeout(() => renderAgentActivity(), 100);
+                return;
+            }
 
-            data.evidence_bundle.subgraph.edges.forEach(edge => {
-                const source = edge.from_ || edge.from;
-                elements.push({
-                    data: {
-                        id: edge.id,
-                        source: source,
-                        target: edge.to,
-                        label: edge.relation,
-                        relation: edge.relation
-                    }
+            const cyEl = document.getElementById('cy');
+            try {
+                if (cy) {
+                    try { cy.destroy(); } catch (e) {}
+                    cy = null;
+                }
+                if (cyEl) cyEl.innerHTML = '';
+
+                const elements = [];
+                const nodeMap = {};
+                const nodeIds = new Set();
+
+                nodes.forEach(node => {
+                    if (!node || node.id == null) return;
+                    if (nodeIds.has(node.id)) return;
+                    nodeIds.add(node.id);
+                    nodeMap[node.id] = node;
+                    const nodeData = {
+                        id: String(node.id),
+                        label: node.label != null ? node.label : node.id,
+                        type: node.type != null ? node.type : 'Marker'
+                    };
+                    if (node.dynamic === true) nodeData.dynamic = true;
+                    elements.push({ data: nodeData });
                 });
-            });
 
-            // Initialize Cytoscape with beautiful styling
-            cy = cytoscape({
+                const edgeIds = new Set();
+                edges.forEach(edge => {
+                    if (!edge || edge.id == null) return;
+                    if (edgeIds.has(edge.id)) return;
+                    const source = edge.from_ != null ? edge.from_ : edge.from;
+                    const target = edge.to;
+                    if (source == null || target == null) return;
+                    const src = String(source);
+                    const tgt = String(target);
+                    edgeIds.add(edge.id);
+                    elements.push({
+                        data: {
+                            id: String(edge.id),
+                            source: src,
+                            target: tgt,
+                            label: edge.relation,
+                            relation: edge.relation
+                        }
+                    });
+                });
+
+                // Initialize Cytoscape with beautiful styling
+                cy = cytoscape({
                 container: document.getElementById('cy'),
                 elements: elements,
                 style: [
@@ -1798,27 +2064,29 @@
                 }
             });
 
-            // Render hypotheses
-            renderHypotheses(data.reasoner_output.hypotheses, data.evidence_bundle);
+                // Extract step durations
+                extractStepDurations();
 
-            // Render patient actions
-            renderPatientActions(data.reasoner_output.patient_actions);
+                // Update reasoning trace if it was previously visible
+                const traceCheckbox = document.getElementById('trace-checkbox');
+                if (traceCheckbox && traceCheckbox.checked) {
+                    renderReasoningTrace();
+                }
 
-            // Extract step durations
-            extractStepDurations();
-            
-            // Update reasoning trace if it was previously visible
-            const traceCheckbox = document.getElementById('trace-checkbox');
-            if (traceCheckbox && traceCheckbox.checked) {
-                renderReasoningTrace();
+                // Render agent activity (will be called after events are processed)
+                setTimeout(() => renderAgentActivity(), 100);
+            } catch (graphErr) {
+                console.error('Graph build failed:', graphErr);
+                if (cy) {
+                    try { cy.destroy(); } catch (e) {}
+                    cy = null;
+                }
+                if (cyEl) {
+                    cyEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#856404;font-size:13px;padding:12px;text-align:center;">Graph could not be drawn. Check console for details.</div>';
+                }
+                extractStepDurations();
+                setTimeout(() => renderAgentActivity(), 100);
             }
-            
-            // Render agent activity (will be called after events are processed)
-            setTimeout(() => renderAgentActivity(), 100);
-            
-            // Render guidance and next steps
-            renderGuidance(data);
-            renderNextSteps(data);
         }
 
         function extractStepDurations() {
@@ -1826,24 +2094,30 @@
             const stepStartTimes = {};
             
             events.forEach(event => {
+                if (!event || event.step == null) return;
                 if (event.type === 'STEP_START') {
                     stepStartTimes[event.step] = Date.now();
-                } else if (event.type === 'STEP_END') {
+                } else if (event.type === 'STEP_END' && event.payload) {
                     const startTime = stepStartTimes[event.step];
-                    if (startTime && event.payload.duration_ms) {
-                        stepDurations[event.step] = event.payload.duration_ms;
+                    const durationMs = event.payload.duration_ms;
+                    if (startTime && durationMs != null) {
+                        stepDurations[event.step] = durationMs;
                         const durationEl = document.getElementById(`duration-${event.step}`);
                         if (durationEl) {
-                            durationEl.textContent = `(${Math.round(event.payload.duration_ms)}ms)`;
+                            durationEl.textContent = `(${Math.round(durationMs)}ms)`;
                         }
                     }
                 }
             });
         }
 
-        function renderHypotheses(hypotheses, evidenceBundle) {
+        function renderHypotheses(hypotheses, evidenceBundle, modelUsage) {
             if (!hypotheses || hypotheses.length === 0) {
-                document.getElementById('hypotheses').innerHTML = '<div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">No hypotheses generated for this case.</div>';
+                const hint = (modelUsage && modelUsage.model_mode)
+                    ? '<div style="padding: 4px 0 0 0; font-size: 11px; color: #999;">Check Reasoning Trace for details.</div>'
+                    : '';
+                document.getElementById('hypotheses').innerHTML =
+                    '<div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">No hypotheses generated for this case.</div>' + hint;
                 return;
             }
             
@@ -1890,10 +2164,23 @@
                     </div>
                 ` : '';
                 
+                const updatedBadge = hypo.merge_updated
+                    ? '<span style="font-size: 10px; background: #e8f5e9; color: #2e7d32; padding: 2px 6px; border-radius: 10px; margin-left: 6px;">Updated</span>'
+                    : '';
+                const reasoningText = hypo.reasoning && String(hypo.reasoning).trim();
+                const reasoningHtml = reasoningText ? `
+                    <div style="margin-top: 10px; padding: 10px; background: #e3f2fd; border-radius: 6px; border-left: 3px solid #2196F3;">
+                        <div style="font-size: 11px; font-weight: 600; color: #1976D2; margin-bottom: 4px;">MedGemma reasoning:</div>
+                        <div style="font-size: 12px; color: #424242; line-height: 1.5;">${reasoningText}</div>
+                    </div>
+                ` : '';
                 return `
                     <div class="hypothesis-card" data-hypothesis-id="${hypo.id || idx}" style="order: ${idx};">
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                            <h4 style="margin: 0;">${hypo.name}</h4>
+                            <div style="display: flex; align-items: center;">
+                                <h4 style="margin: 0;">${hypo.name}</h4>
+                                ${updatedBadge}
+                            </div>
                             <div style="display: flex; flex-direction: column; align-items: flex-end;">
                                 <span class="${confidenceClass}">${Math.round(confidence * 100)}%</span>
                                 <span style="font-size: 9px; color: #999; margin-top: 2px;">${confidenceLabel}</span>
@@ -1905,6 +2192,7 @@
                                 ${counterEvidenceCount > 0 ? `<span style="color: #f44336; margin-left: 8px;">✗ ${counterEvidenceCount} contradicting</span>` : ''}
                             </div>
                         ` : ''}
+                        ${reasoningHtml}
                         ${nextTests.length > 0 ? `
                             <div class="next-tests" style="margin-bottom: 10px;">
                                 <h5 style="font-size: 12px; font-weight: 600; color: #495057; margin-bottom: 6px;">Recommended Tests:</h5>
@@ -1957,8 +2245,50 @@
             document.getElementById('actions').innerHTML = actionsHtml;
         }
 
+        function renderNovelInsights(novelInsights) {
+            if (!novelInsights || novelInsights.length === 0) {
+                document.getElementById('novel-insights').innerHTML = '<div style="padding: 12px; color: #6c757d; font-size: 12px; text-align: center;">No novel insights for this case.</div>';
+                return;
+            }
+            const insightsHtml = novelInsights.map(item => {
+                return `
+                    <div class="hypothesis-card" style="border-left: 3px solid #ff9800;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <div style="font-weight: 600; color: #333;">${item.insight || 'Novel insight'}</div>
+                            <span style="font-size: 10px; background: #fff3e0; color: #e65100; padding: 2px 6px; border-radius: 10px;">Outside KG</span>
+                        </div>
+                        ${item.rationale ? `<div style="font-size: 12px; color: #666;">${item.rationale}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+            document.getElementById('novel-insights').innerHTML = insightsHtml;
+        }
+
+        function renderNovelActions(actions) {
+            if (!actions || actions.length === 0) {
+                document.getElementById('novel-actions').innerHTML = '<div style="padding: 12px; color: #6c757d; font-size: 12px; text-align: center;">No novel actions for this case.</div>';
+                return;
+            }
+            const actionsHtml = actions.map(action => {
+                return `
+                    <div class="action-card" style="margin-bottom: 12px; border-left: 3px solid #ff9800;">
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 6px;">
+                            <div class="task" style="flex: 1;">${action.task}</div>
+                            <div style="display: flex; gap: 6px; align-items: center;">
+                                <span style="font-size: 10px; background: #fff3e0; color: #e65100; padding: 2px 6px; border-radius: 10px;">Outside KG</span>
+                                ${action.risk ? `<span class="risk ${action.risk}" style="margin-left: 4px;">${action.risk} risk</span>` : ''}
+                            </div>
+                        </div>
+                        ${action.why ? `<div class="why" style="font-size: 12px; color: #666; margin-bottom: 6px;">${action.why}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+            document.getElementById('novel-actions').innerHTML = actionsHtml;
+        }
+
         function renderGuidance(data) {
             const guidanceContent = document.getElementById('guidance-content');
+            if (!guidanceContent) return;
             if (!data || !data.events) {
                 guidanceContent.innerHTML = '<div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">Load a case to see step-by-step guidance</div>';
                 return;
@@ -2001,7 +2331,7 @@
             let html = '';
             const completedSteps = new Set();
             events.forEach(event => {
-                if (event.type === 'STEP_END') {
+                if (event && event.type === 'STEP_END' && event.step != null) {
                     completedSteps.add(event.step);
                 }
             });
@@ -2009,7 +2339,7 @@
             Object.keys(stepExplanations).forEach(step => {
                 const info = stepExplanations[step];
                 const isCompleted = completedSteps.has(step);
-                const isActive = events.some(e => e.step === step && e.type === 'STEP_START' && !completedSteps.has(step));
+                const isActive = events.some(e => e && e.step === step && e.type === 'STEP_START' && !completedSteps.has(step));
                 
                 html += `
                     <div style="margin-bottom: 16px; padding: 12px; background: ${isCompleted ? '#e8f5e9' : isActive ? '#e3f2fd' : '#f5f5f5'}; border-radius: 8px; border-left: 4px solid ${isCompleted ? '#4CAF50' : isActive ? '#2196F3' : '#ccc'};">
@@ -2048,6 +2378,7 @@
 
         function renderNextSteps(data) {
             const nextStepsContent = document.getElementById('next-steps-content');
+            if (!nextStepsContent) return;
             if (!data || !data.reasoner_output) {
                 nextStepsContent.innerHTML = '<div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">Load a case to see recommended next steps</div>';
                 return;
@@ -2062,7 +2393,9 @@
             const allTests = [];
             hypotheses.forEach(hypo => {
                 (hypo.next_tests || []).forEach(test => {
+                    if (test == null) return;
                     const testName = typeof test === 'string' ? test : (test.label || test.test_id || test);
+                    if (!testName) return;
                     if (!allTests.includes(testName)) {
                         allTests.push(testName);
                     }
@@ -2082,7 +2415,10 @@
             }
             
             // Monitoring recommendations
-            const monitoringActions = actions.filter(a => a.bucket === 'monitoring' || (a.task && a.task.toLowerCase().includes('monitor')));
+            const monitoringActions = actions.filter(a => {
+                const task = a && a.task;
+                return a.bucket === 'monitoring' || (typeof task === 'string' && safeLower(task).includes('monitor'));
+            });
             if (monitoringActions.length > 0) {
                 html += `
                     <div style="margin-bottom: 16px; padding: 12px; background: #fff3e0; border-radius: 8px; border-left: 4px solid #FF9800;">
@@ -2217,8 +2553,10 @@
         }
 
         function handleEvent(event) {
+            if (!event) return;
             const step = event.step;
             const type = event.type;
+            if (step == null || type == null) return;
             
             updateTimeline(step, type);
             
@@ -2241,10 +2579,23 @@
                 case 'EVIDENCE_APPLIED':
                     handleEvidenceApplied(event);
                     break;
+                case 'MODEL_REASONING_START': {
+                    const banner = document.getElementById('reasoning-banner');
+                    const labelEl = document.getElementById('reasoning-banner-label');
+                    if (banner) banner.classList.add('visible');
+                    if (labelEl && event.payload && event.payload.label) labelEl.textContent = event.payload.label;
+                    break;
+                }
+                case 'MODEL_REASONING_END': {
+                    const banner = document.getElementById('reasoning-banner');
+                    if (banner) banner.classList.remove('visible');
+                    break;
+                }
             }
         }
 
         function updateTimeline(step, type) {
+            if (step == null || type == null) return;
             const chip = document.querySelector(`[data-step="${step}"]`);
             if (!chip) return;
             
@@ -2258,6 +2609,9 @@
         }
 
         function handleHighlight(event) {
+            if (!cy || typeof cy.getElementById !== 'function') {
+                return;
+            }
             const payload = event.payload || {};
             const nodeIds = payload.node_ids || [];
             const edgeIds = payload.edge_ids || [];
@@ -2724,16 +3078,18 @@
             }
             
             // Show model reasoning from events
-            const modelEvents = events.filter(e => e.type === 'MODEL_CALLED' && e.payload.status === 'success');
+            const modelEvents = events.filter(e => e && e.type === 'MODEL_CALLED' && e.payload && e.payload.status === 'success');
             if (modelEvents.length > 0) {
                 html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">Model Reasoning:</h5>';
                 modelEvents.forEach((event, idx) => {
-                    const agentType = event.payload.agent_type || 'unknown';
-                    const responseTime = event.payload.response_time_ms ? `${Math.round(event.payload.response_time_ms)}ms` : 'N/A';
-                    const cached = event.payload.cached ? ' (cached)' : '';
+                    const payload = event.payload || {};
+                    const agentType = (payload.agent_type != null) ? String(payload.agent_type) : 'unknown';
+                    const responseTime = payload.response_time_ms != null ? `${Math.round(payload.response_time_ms)}ms` : 'N/A';
+                    const cached = payload.cached ? ' (cached)' : '';
+                    const agentDisplay = agentType.replace(/_/g, ' ').replace(/\b\w/g, ch => (ch && typeof ch === 'string') ? ch.toUpperCase() : ch);
                     html += `
                         <div class="evidence-item" style="border-left-color: #2196F3;">
-                            <strong>${agentType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</strong>
+                            <strong>${agentDisplay}</strong>
                             <div class="edge-id">Response time: ${responseTime}${cached}</div>
                         </div>
                     `;
@@ -2741,17 +3097,19 @@
             }
             
             // Show agent decisions
-            const agentDecisions = events.filter(e => e.type === 'AGENT_DECISION');
+            const agentDecisions = events.filter(e => e && e.type === 'AGENT_DECISION');
             if (agentDecisions.length > 0) {
                 html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">Agent Decisions:</h5>';
                 agentDecisions.forEach((event, idx) => {
-                    const agentType = event.payload.agent_type || 'unknown';
-                    const decision = event.payload.decision || 'unknown';
-                    const rationale = event.payload.rationale || '';
+                    const payload = event.payload || {};
+                    const agentType = (payload.agent_type != null) ? String(payload.agent_type) : 'unknown';
+                    const decision = (payload.decision != null) ? String(payload.decision) : 'unknown';
+                    const rationale = (payload.rationale != null) ? String(payload.rationale) : '';
                     const decisionColor = decision === 'use_model' ? '#4CAF50' : '#9E9E9E';
+                    const agentDisplay = agentType.replace(/_/g, ' ').replace(/\b\w/g, ch => (ch && typeof ch === 'string') ? ch.toUpperCase() : ch);
                     html += `
                         <div class="evidence-item" style="border-left-color: ${decisionColor};">
-                            <strong>${agentType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</strong>: 
+                            <strong>${agentDisplay}</strong>: 
                             <span style="color: ${decisionColor}; font-weight: 600;">${decision === 'use_model' ? 'Using Model' : 'Using Rules'}</span>
                             ${rationale ? `<div class="edge-id">${rationale}</div>` : ''}
                         </div>
@@ -2783,7 +3141,7 @@
                     const borderColor = relation === 'SUPPORTS' ? '#4CAF50' : '#f44336';
                     html += `
                         <div class="evidence-item" style="border-left-color: ${borderColor};">
-                            <strong>${item.marker}</strong> (${item.marker_status}) 
+                            <strong>${item.marker}</strong> (${item.marker_status === 'REFERENCE_UNKNOWN' ? 'Reference unknown' : item.marker_status}) 
                             <span style="color: ${borderColor}; font-weight: 600;">${relation}</span> 
                             ${item.pattern_id}
                             <div class="edge-id">Edge: ${item.edge_id} | Weight: ${item.weight?.toFixed(2) || 'N/A'}</div>
@@ -2797,7 +3155,7 @@
                 evidenceBundle.supports.forEach(item => {
                     html += `
                         <div class="evidence-item">
-                            <strong>${item.marker}</strong> (${item.marker_status}) → ${item.pattern_id}
+                            <strong>${item.marker}</strong> (${item.marker_status === 'REFERENCE_UNKNOWN' ? 'Reference unknown' : item.marker_status}) → ${item.pattern_id}
                             <div class="edge-id">Edge: ${item.edge_id}</div>
                         </div>
                     `;
@@ -2809,7 +3167,7 @@
                 evidenceBundle.contradictions.forEach(item => {
                     html += `
                         <div class="evidence-item" style="border-left-color: #f44336;">
-                            <strong>${item.marker}</strong> (${item.marker_status}) → ${item.pattern_id}
+                            <strong>${item.marker}</strong> (${item.marker_status === 'REFERENCE_UNKNOWN' ? 'Reference unknown' : item.marker_status}) → ${item.pattern_id}
                             <div class="edge-id">Edge: ${item.edge_id}</div>
                         </div>
                     `;
@@ -2878,7 +3236,8 @@
                 // Group decisions by agent type
                 const decisionsByAgent = {};
                 agentDecisions.forEach(decision => {
-                    const agentType = decision.payload.agent_type;
+                    const payload = decision && decision.payload;
+                    const agentType = (payload && payload.agent_type != null) ? String(payload.agent_type) : 'unknown';
                     if (!decisionsByAgent[agentType]) {
                         decisionsByAgent[agentType] = [];
                     }
@@ -2886,21 +3245,23 @@
                 });
                 
                 // Show each agent's activity
-                Object.keys(decisionsByAgent).forEach(agentType => {
-                    const decisions = decisionsByAgent[agentType];
+                Object.keys(decisionsByAgent).forEach(agentTypeKey => {
+                    const decisions = decisionsByAgent[agentTypeKey];
                     const lastDecision = decisions[decisions.length - 1];
-                    const decision = lastDecision.payload.decision;
-                    const rationale = lastDecision.payload.rationale || '';
-                    const modelCall = modelCalls.find(m => m.payload.agent_type === agentType);
+                    const lastPayload = lastDecision && lastDecision.payload;
+                    const decision = lastPayload && lastPayload.decision != null ? String(lastPayload.decision) : '';
+                    const rationale = (lastPayload && lastPayload.rationale != null) ? String(lastPayload.rationale) : '';
+                    const modelCall = modelCalls.find(m => m.payload && (m.payload.agent_type == null ? agentTypeKey === 'unknown' : String(m.payload.agent_type) === agentTypeKey));
                     
                     const isModelUsed = decision === 'use_model' && modelCall;
-                    const responseTime = modelCall ? `${Math.round(modelCall.payload.response_time_ms || 0)}ms` : '';
-                    const cached = modelCall && modelCall.payload.cached ? ' (cached)' : '';
+                    const responseTime = modelCall && modelCall.payload ? `${Math.round(modelCall.payload.response_time_ms || 0)}ms` : '';
+                    const cached = modelCall && modelCall.payload && modelCall.payload.cached ? ' (cached)' : '';
+                    const agentTypeDisplay = (typeof agentTypeKey === 'string') ? agentTypeKey.replace(/_/g, ' ').replace(/\b\w/g, l => (l && typeof l === 'string') ? l.toUpperCase() : l) : 'unknown';
                     
                     html += `
                         <div class="agent-call-item ${isModelUsed ? '' : 'rule-based'}">
                             <h6>
-                                <span class="agent-type">${agentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+                                <span class="agent-type">${agentTypeDisplay}</span>
                             </h6>
                             <div style="font-size: 11px; color: ${isModelUsed ? '#1976D2' : '#616161'}; font-weight: 600;">
                                 ${isModelUsed ? '🤖 Using Model' : '📋 Using Rules'}
@@ -2949,13 +3310,14 @@
             const testNodes = (subgraph.nodes || []).filter(n => n.type === 'Test');
             (reasoner.hypotheses || []).forEach(h => {
                 (h.next_tests || []).forEach(t => {
+                    if (t == null) return;
                     let id = null;
                     if (typeof t === 'object' && t !== null && t.test_id) id = t.test_id;
-                    else if (typeof t === 'string') {
-                        const lower = t.toLowerCase();
+                    else if (typeof t === 'string' && t.trim()) {
+                        const lower = safeLower(t);
                         const match = testNodes.find(n =>
                             n.id === t || n.id === 't_' + lower.replace(/\s+/g, '_') ||
-                            (n.label && n.label.toLowerCase().includes(lower))
+                            (typeof n.label === 'string' && safeLower(n.label).includes(lower))
                         );
                         id = match ? match.id : null;
                     }

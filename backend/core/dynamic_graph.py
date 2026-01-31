@@ -7,6 +7,11 @@ import yaml
 
 _CONFIG_PATH = os.path.join(os.path.dirname(__file__), "dynamic_marker_edges.yml")
 
+
+def _nid_from_marker(marker: str, marker_to_node: dict) -> str:
+    """Canonical node id for a marker (matches context_selector)."""
+    return marker_to_node.get(marker, f"m_{marker.lower().replace(' ', '_')}")
+
 _dynamic_edges_config = None
 
 
@@ -21,24 +26,32 @@ def _load_config():
     return _dynamic_edges_config
 
 
-def extend_subgraph(case_card: dict, subgraph: dict) -> dict:
+def extend_subgraph(case_card: dict, subgraph: dict):
     """
     Add synthetic nodes for marker node ids not present in subgraph, and synthetic
     edges from config (dynamic_marker_edges.yml). Only adds edges whose pattern_id
-    is in case_card["signals"] and exists in the subgraph. Returns the same subgraph
-    dict with nodes and edges extended in place.
+    is in case_card["signals"] and exists in the subgraph. Returns (subgraph, suggested_kg_additions).
+    suggested_kg_additions has "nodes" and "edges" for human review / KG integration.
     """
-    nodes = subgraph.get("nodes") or []
-    edges = subgraph.get("edges") or []
+    nodes = list(subgraph.get("nodes") or [])
+    edges = list(subgraph.get("edges") or [])
     subgraph_node_ids = {n["id"] for n in nodes}
     abnormal_markers = case_card.get("abnormal_markers") or []
     abnormal_marker_node_ids = case_card.get("abnormal_marker_node_ids") or []
     signals = set(case_card.get("signals") or [])
 
-    marker_to_label = dict(zip(abnormal_marker_node_ids, abnormal_markers))
+    suggested_nodes = []
+    suggested_edges = []
+
+    # Build nid -> label from markers (same order as context_selector; do not zip ids with markers)
+    try:
+        from .context_selector import _marker_to_nid
+    except ImportError:
+        _marker_to_nid = lambda m: f"m_{m.lower().replace(' ', '_')}"
+    marker_to_label = {_marker_to_nid(m): m for m in abnormal_markers}
     dynamic_ids = [nid for nid in abnormal_marker_node_ids if nid not in subgraph_node_ids]
     if not dynamic_ids:
-        return subgraph
+        return subgraph, _suggested_additions(suggested_nodes, suggested_edges)
 
     config = _load_config()
     edge_counter = [0]
@@ -51,13 +64,15 @@ def extend_subgraph(case_card: dict, subgraph: dict) -> dict:
 
     for node_id in dynamic_ids:
         label = marker_to_label.get(node_id, node_id)
-        nodes.append({
+        node_payload = {
             "id": node_id,
             "type": "Marker",
             "label": label,
             "description": "User-provided lab (not in knowledge graph).",
             "dynamic": True,
-        })
+        }
+        nodes.append(node_payload)
+        suggested_nodes.append(node_payload)
         subgraph_node_ids.add(node_id)
 
         marker_name = label
@@ -71,15 +86,27 @@ def extend_subgraph(case_card: dict, subgraph: dict) -> dict:
             relation = rule.get("relation") or "SUPPORTS"
             rationale = rule.get("rationale") or ""
             edge_id = next_edge_id(node_id, pattern_id)
-            edges.append({
+            edge_payload = {
                 "id": edge_id,
                 "from": node_id,
                 "to": pattern_id,
                 "relation": relation,
                 "rationale": rationale,
                 "source_label": "dynamic",
+            }
+            edges.append(edge_payload)
+            suggested_edges.append({
+                "from": node_id,
+                "to": pattern_id,
+                "relation": relation,
+                "rationale": rationale,
             })
 
     subgraph["nodes"] = nodes
     subgraph["edges"] = edges
-    return subgraph
+    return subgraph, _suggested_additions(suggested_nodes, suggested_edges)
+
+
+def _suggested_additions(nodes: list, edges: list) -> dict:
+    """Build suggested_kg_additions dict for pipeline output."""
+    return {"nodes": nodes, "edges": edges}

@@ -1,8 +1,11 @@
 """
 Agent Manager - Unified interface for all agentic MedGemma calls
 """
-import os
 import json
+import logging
+import os
+import time
+from datetime import datetime
 from typing import Dict, Any, Optional, List
 from .model_manager import model_manager
 from .events import EventType, Step
@@ -16,6 +19,13 @@ class AgentManager:
             'min_confidence_for_refinement': 0.7,
             'rare_combination_threshold': 0.1  # probability of seeing this combination
         }
+    
+    def _env_enabled(self, env_key: str, default: bool = False) -> bool:
+        """Check if a feature flag is enabled via environment variable."""
+        raw = os.getenv(env_key)
+        if raw is None:
+            return default
+        return raw.strip().lower() not in ("0", "false", "no", "off", "")
     
     def _load_prompt_template(self, agent_type: str) -> str:
         """Load prompt template from file"""
@@ -51,12 +61,13 @@ class AgentManager:
             system_prompt = template
             user_template = json.dumps(data, indent=2)
         
-        # Format user prompt with data
+        # Format user prompt with merged kwargs (data overrides context) so no duplicate keyword
+        format_kwargs = {**context, **data}
         try:
-            user_prompt = user_template.format(**data, **context)
-        except KeyError:
-            # If formatting fails, just use JSON
-            user_prompt = json.dumps({**data, **context}, indent=2)
+            user_prompt = user_template.format(**format_kwargs)
+        except (KeyError, TypeError):
+            # If formatting fails (missing key or duplicate keyword), fall back to JSON
+            user_prompt = json.dumps(format_kwargs, indent=2)
         
         return system_prompt, user_prompt
     
@@ -68,6 +79,8 @@ class AgentManager:
             return False
         
         if agent_type == "context_selection":
+            if not self._env_enabled("USE_CONTEXT_SELECTION_MODEL", default=False):
+                return False
             abnormal_markers = context.get('abnormal_markers', [])
             patient_context = context.get('patient_context', {})
             
@@ -86,6 +99,8 @@ class AgentManager:
             return False
         
         elif agent_type == "evidence_weighting":
+            if not self._env_enabled("USE_EVIDENCE_WEIGHTING_MODEL", default=False):
+                return False
             marker = context.get('marker')
             status = context.get('status')
             evidence_bundle = context.get('evidence_bundle', {})
@@ -101,10 +116,14 @@ class AgentManager:
             return False
         
         elif agent_type == "hypothesis_generation":
-            # Always use model for hypothesis generation
+            # Only use model for full JSON hypothesis generation if explicitly enabled (hybrid uses lite + ranking/reasoning by default)
+            if not self._env_enabled("USE_HYPOTHESIS_GENERATION_MODEL", default=False):
+                return False
             return True
         
         elif agent_type == "test_recommendation":
+            if not self._env_enabled("USE_TEST_RECOMMENDATION_MODEL", default=False):
+                return False
             hypotheses = context.get('hypotheses', [])
             
             # Use model if ambiguity exists
@@ -118,12 +137,33 @@ class AgentManager:
             return False
         
         elif agent_type == "action_generation":
-            # Always use model for action generation
+            if not self._env_enabled("USE_ACTION_GENERATION_MODEL", default=False):
+                return False
             return True
         
         elif agent_type == "guardrail_explanation":
+            if not self._env_enabled("USE_GUARDRAIL_EXPLANATION_MODEL", default=False):
+                return False
             # Use model when guardrail fails
             return context.get('guardrail_failed', False)
+        
+        elif agent_type == "novel_insight":
+            if not self._env_enabled("USE_NOVEL_INSIGHT_MODEL", default=False):
+                return False
+            if context.get("force_novelty"):
+                return True
+            # Trigger on low confidence, ambiguity, or contradictions
+            top_conf = float(context.get("top_confidence", 0))
+            margin = float(context.get("confidence_margin", 1))
+            contradictions = int(context.get("contradiction_count", 0))
+            supports = int(context.get("support_count", 0))
+            if top_conf < 0.55:
+                return True
+            if margin < self.decision_thresholds['ambiguity_threshold']:
+                return True
+            if contradictions > 0 and contradictions >= supports:
+                return True
+            return False
         
         return False
     
@@ -246,6 +286,8 @@ class AgentManager:
         # Build prompts
         try:
             system_prompt, user_prompt = self._build_prompt(agent_type, context, data)
+            if agent_type == 'hypothesis_generation':
+                user_prompt = user_prompt + "\n{"
         except Exception as e:
             # If prompt loading fails, fallback
             if events_list is not None and step is not None:
@@ -266,16 +308,28 @@ class AgentManager:
         
         # Call model
         try:
+            if agent_type == 'hypothesis_generation':
+                logging.info("Starting hypothesis_generation model call")
+            elif agent_type == 'action_generation':
+                logging.info("Starting action_generation model call")
+            max_tokens_raw = os.getenv("MEDGEMMA_MAX_TOKENS", "384").strip()
+            try:
+                max_tokens = max(128, min(1024, int(max_tokens_raw)))
+            except ValueError:
+                max_tokens = 384
             response = model_manager.generate(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                max_tokens=1024,
+                max_tokens=max_tokens,
                 temperature=0.3,
                 top_p=0.9
             )
-            
+            if agent_type == 'hypothesis_generation':
+                logging.info("Completed hypothesis_generation")
+            elif agent_type == 'action_generation':
+                logging.info("Completed action_generation")
             response_time = time.time() - start_time
-            
+
             # Emit model called event
             if events_list is not None and step is not None:
                 from .events import emit_event
@@ -292,12 +346,31 @@ class AgentManager:
                     }
                 )
             
-            # Return parsed JSON if available, else raw text
-            if response.get('json'):
+            # Return parsed JSON if available, else raw text; validate critical keys by agent_type
+            parsed = response.get('json')
+            if parsed is None and agent_type == 'hypothesis_generation' and response.get('text'):
+                parsed = model_manager._extract_json_from_text("{" + response["text"])
+            if parsed is not None and isinstance(parsed, dict):
+                parsed = self._validate_agent_result(agent_type, parsed)
+            if parsed is not None:
+                if agent_type == "hypothesis_generation" and parsed.get("hypotheses") == [] and response.get("text"):
+                    out_dir = os.path.join(os.path.dirname(__file__), "..", "output")
+                    try:
+                        os.makedirs(out_dir, exist_ok=True)
+                        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                        path = os.path.join(out_dir, "raw_hypothesis_failed_%s.txt" % ts)
+                        with open(path, "w", encoding="utf-8") as f:
+                            f.write(response["text"])
+                        logging.warning("hypothesis_generation raw output saved to %s", path)
+                    except OSError:
+                        pass
+                raw_text = response['text']
+                if agent_type == 'hypothesis_generation' and parsed is not None and not raw_text.strip().startswith('{'):
+                    raw_text = "{" + raw_text
                 return {
                     'use_model': True,
-                    'result': response['json'],
-                    'raw_output': response['text'],
+                    'result': parsed,
+                    'raw_output': raw_text,
                     'response_time_ms': response_time * 1000
                 }
             else:
@@ -306,12 +379,16 @@ class AgentManager:
                     'result': None,
                     'raw_output': response['text'],
                     'response_time_ms': response_time * 1000,
-                    'warning': 'Could not extract JSON from model output'
+                    'warning': 'Could not extract or validate JSON from model output'
                 }
         
         except Exception as e:
+            if agent_type == 'hypothesis_generation':
+                logging.info("hypothesis_generation failed: %s", e)
+            elif agent_type == 'action_generation':
+                logging.info("action_generation failed: %s", e)
             response_time = time.time() - start_time
-            
+
             # Emit error event
             if events_list is not None and step is not None:
                 from .events import emit_event
@@ -334,6 +411,37 @@ class AgentManager:
                 'error': str(e)
             }
     
+    def _validate_agent_result(self, agent_type: str, result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Validate parsed JSON has critical keys and types; return None or safe fallback if invalid."""
+        if not isinstance(result, dict):
+            return None
+        if agent_type == "hypothesis_generation":
+            if "hypotheses" not in result or not isinstance(result.get("hypotheses"), list):
+                logging.warning("hypothesis_generation: missing or invalid 'hypotheses' list in model output")
+                return {"hypotheses": [], "patient_actions": result.get("patient_actions") or [], "red_flags": result.get("red_flags") or []}
+            return result
+        if agent_type == "action_generation":
+            if "patient_actions" not in result or not isinstance(result.get("patient_actions"), list):
+                logging.warning("action_generation: missing or invalid 'patient_actions' list in model output")
+                return {"patient_actions": []}
+            return result
+        if agent_type == "test_recommendation":
+            if "recommended_tests" not in result or not isinstance(result.get("recommended_tests"), list):
+                logging.warning("test_recommendation: missing or invalid 'recommended_tests' list in model output")
+                return {"recommended_tests": []}
+            return result
+        if agent_type == "novel_insight":
+            if "novel_insights" not in result:
+                result["novel_insights"] = result.get("novel_insights") or []
+            if "novel_actions" not in result:
+                result["novel_actions"] = result.get("novel_actions") or []
+            if not isinstance(result["novel_insights"], list):
+                result["novel_insights"] = []
+            if not isinstance(result["novel_actions"], list):
+                result["novel_actions"] = []
+            return result
+        return result
+
     def _get_decision_rationale(self, agent_type: str, context: Dict[str, Any], decision: bool) -> str:
         """Generate rationale for agent decision"""
         if not decision:

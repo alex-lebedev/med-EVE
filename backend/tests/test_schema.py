@@ -15,7 +15,22 @@ def test_reasoner_output_schema():
             "why": "Differentiate",
             "risk": "low"
         }],
-        "red_flags": []
+        "red_flags": [],
+        "novel_insights": [{
+            "insight": "Consider mixed anemia etiology",
+            "rationale": "Evidence suggests competing processes",
+            "outside_kg": True
+        }],
+        "novel_actions": [{
+            "task": "Discuss alternative causes with clinician",
+            "why": "Outside-KG differential considerations",
+            "risk": "low",
+            "outside_kg": True
+        }],
+        "provenance": {
+            "kg_grounded": False,
+            "notes": "Outside-KG ideas included."
+        }
     }
     output = ReasonerOutput(**sample)
     assert output.hypotheses[0].name == "Anemia of inflammation"

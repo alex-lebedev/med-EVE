@@ -12,7 +12,7 @@ def test_extend_subgraph_adds_node_and_edge_for_anc():
         "nodes": [{"id": "m_hscrp", "type": "Marker", "label": "hsCRP"}, {"id": "p_inflam_iron_seq", "type": "Pattern", "label": "Inflammation"}],
         "edges": [{"id": "e_001", "from": "m_hscrp", "to": "p_inflam_iron_seq", "relation": "SUPPORTS"}],
     }
-    out = extend_subgraph(case_card, subgraph)
+    out, suggested = extend_subgraph(case_card, subgraph)
     node_ids = [n["id"] for n in out["nodes"]]
     assert "m_anc" in node_ids
     anc_node = next(n for n in out["nodes"] if n["id"] == "m_anc")
@@ -24,6 +24,8 @@ def test_extend_subgraph_adds_node_and_edge_for_anc():
     dyn_edge = next(e for e in edge_from_anc if e.get("from") == "m_anc" and e.get("to") == "p_inflam_iron_seq")
     assert dyn_edge["relation"] == "SUPPORTS"
     assert "rationale" in dyn_edge or "source_label" in dyn_edge
+    assert "nodes" in suggested and "edges" in suggested
+    assert len(suggested["nodes"]) >= 1 and len(suggested["edges"]) >= 1
 
 
 def test_extend_subgraph_idempotent_when_no_dynamic_markers():
@@ -38,6 +40,7 @@ def test_extend_subgraph_idempotent_when_no_dynamic_markers():
     }
     nodes_before = len(subgraph["nodes"])
     edges_before = len(subgraph["edges"])
-    out = extend_subgraph(case_card, subgraph)
+    out, suggested = extend_subgraph(case_card, subgraph)
     assert len(out["nodes"]) == nodes_before
     assert len(out["edges"]) == edges_before
+    assert suggested["nodes"] == [] and suggested["edges"] == []

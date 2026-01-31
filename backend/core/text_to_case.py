@@ -1,10 +1,12 @@
 """
-Rule-based parser: free text -> case dict (patient + labs) for the pipeline.
+Rule-based parser: free text -> case dict (patient + labs + symptom_tokens) for the pipeline.
 Uses known marker names and default ref ranges; no OpenAI/MedGemma required.
 """
 import re
+import os
+import yaml
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 # Marker names we recognize (case-insensitive match); order longer names first for regex
 MARKER_NAMES = [
@@ -65,12 +67,57 @@ def _extract_context(text: str) -> dict:
     return out
 
 
+_SYMPTOM_TO_PATTERN_CONFIG = None
+
+
+def _load_symptom_to_pattern() -> dict:
+    global _SYMPTOM_TO_PATTERN_CONFIG
+    if _SYMPTOM_TO_PATTERN_CONFIG is None:
+        path = os.path.join(os.path.dirname(__file__), "symptom_to_pattern.yml")
+        if os.path.isfile(path):
+            with open(path) as f:
+                _SYMPTOM_TO_PATTERN_CONFIG = yaml.safe_load(f) or {}
+        else:
+            _SYMPTOM_TO_PATTERN_CONFIG = {}
+    return _SYMPTOM_TO_PATTERN_CONFIG
+
+
+def _extract_symptom_tokens(text: str, patient_context: dict) -> List[str]:
+    """Extract symptom/free-text tokens for mapping: keywords found in text + config keys present."""
+    lower = (text or "").lower()
+    tokens = []
+    seen = set()
+    for keyword, key, _ in CONTEXT_KEYWORDS:
+        if keyword in lower and key not in seen:
+            tokens.append(key)
+            seen.add(key)
+    config = _load_symptom_to_pattern()
+    for phrase in config:
+        if phrase in lower and phrase not in seen:
+            tokens.append(phrase)
+            seen.add(phrase)
+    return tokens
+
+
 def _parse_number(s: str) -> Optional[float]:
     s = s.strip().replace(",", ".")
     try:
         return float(s)
     except ValueError:
         return None
+
+
+def _normalize_fallback_name(name: str) -> str:
+    """Normalize fallback marker name: strip, collapse spaces to single space."""
+    s = " ".join((name or "").split()).strip()
+    return s if s else name
+
+
+# Fallback: match "name + number + optional unit" for unknown markers (not in MARKER_NAMES)
+_FALLBACK_LAB_PATTERN = re.compile(
+    r"\b([A-Za-z][A-Za-z0-9\s\-/]*?)\s+([0-9]+\.?[0-9]*)\s*([a-zA-Zµ/%µL\/dL\.\-]*)?",
+    re.IGNORECASE,
+)
 
 
 def text_to_case(text: str) -> dict:
@@ -117,11 +164,40 @@ def text_to_case(text: str) -> dict:
                 "timestamp": datetime.now().strftime("%Y-%m-%d"),
             })
 
+    # Fallback: match "name + number + optional unit" for tokens not in MARKER_NAMES
+    known_marker_set = {m.lower() for m in MARKER_NAMES}
+    known_marker_set.add("anc")  # canonical
+    for m in _FALLBACK_LAB_PATTERN.finditer(text):
+        name_raw = (m.group(1) or "").strip()
+        name_norm = _normalize_fallback_name(name_raw)
+        if not name_norm or len(name_norm) < 2:
+            continue
+        if name_norm.lower() in known_marker_set:
+            continue
+        if name_norm in seen_markers:
+            continue
+        value = _parse_number(m.group(2))
+        if value is None:
+            continue
+        unit = (m.group(3) or "").strip() or ""
+        seen_markers.add(name_norm)
+        labs.append({
+            "marker": name_norm,
+            "value": value,
+            "unit": unit,
+            "ref_low": 0,
+            "ref_high": 0,
+            "timestamp": datetime.now().strftime("%Y-%m-%d"),
+            "from_fallback": True,
+        })
+
     if not labs:
         raise ValueError(
             "Could not parse any lab values from text. "
             "Try listing labs like: Ferritin 12 ng/mL, Hb 10.5 g/dL, TSH 2.6 mIU/L"
         )
+
+    symptom_tokens = _extract_symptom_tokens(text, patient_context)
 
     return {
         "patient": {
@@ -130,4 +206,5 @@ def text_to_case(text: str) -> dict:
             "context": patient_context,
         },
         "labs": labs,
+        "symptom_tokens": symptom_tokens,
     }

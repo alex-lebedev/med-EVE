@@ -94,13 +94,21 @@ class ModelManager:
         self.response_cache = {}  # Simple in-memory cache for prompt responses
 
     def detect_device(self):
+        # Explicit device override (e.g. MEDGEMMA_DEVICE=cpu for reliability on laptop)
+        env_device = os.getenv("MEDGEMMA_DEVICE", "").strip().lower()
+        if env_device in ("cpu", "cuda", "mps"):
+            return env_device
         if not TORCH_AVAILABLE:
             return "cpu"
         try:
             if torch.cuda.is_available():
                 return "cuda"
-            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                return "mps"
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                # Prefer CPU on Apple Silicon by default to avoid MPS placeholder errors
+                use_mps = os.getenv("USE_MPS", "").strip().lower() in ("1", "true", "yes")
+                if use_mps:
+                    return "mps"
+                return "cpu"
         except Exception:
             pass
         return "cpu"
@@ -226,14 +234,82 @@ class ModelManager:
             self.model_loading = False
             self.model_loaded_event.set()
 
+    def _strip_markdown_fences(self, text: str) -> str:
+        """Remove leading ```json or ``` and take content until closing ``` or end. Trim whitespace."""
+        t = text.strip()
+        if t.startswith("```json"):
+            t = t[7:].lstrip("\n")
+        elif t.startswith("```"):
+            t = t[3:].lstrip("\n")
+        else:
+            return t
+        idx = t.find("```")
+        if idx >= 0:
+            t = t[:idx].rstrip()
+        return t.strip()
+
+    def _truncate_at_balanced_brace(self, text: str) -> str:
+        """Return substring from first { to last } that balances braces."""
+        start = text.find("{")
+        if start < 0:
+            return text
+        depth = 0
+        end = -1
+        in_string = False
+        escape = False
+        quote = None
+        i = start
+        while i < len(text):
+            c = text[i]
+            if escape:
+                escape = False
+                i += 1
+                continue
+            if c == "\\" and in_string:
+                escape = True
+                i += 1
+                continue
+            if not in_string:
+                if c in ('"', "'"):
+                    in_string = True
+                    quote = c
+                elif c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = i
+                        break
+            else:
+                if c == quote:
+                    in_string = False
+            i += 1
+        if end >= 0:
+            return text[start : end + 1]
+        return text[start:]
+
     def _extract_json_from_text(self, text: str) -> Optional[Dict[str, Any]]:
-        """Extract JSON from model output, handling markdown code blocks and text-wrapped JSON"""
-        # Try to find JSON in markdown code blocks first
+        """Extract JSON from model output, handling markdown code blocks and text-wrapped JSON."""
+        if not text or not text.strip():
+            return None
+        # Strip markdown fences first so trailing junk (e.g. 0\n0\n after ```) is dropped
+        stripped = self._strip_markdown_fences(text)
+        # Truncate at last balanced } so trailing non-JSON is ignored
+        truncated = self._truncate_at_balanced_brace(stripped)
+
+        # Try parsing the truncated block
+        try:
+            return json.loads(truncated)
+        except json.JSONDecodeError:
+            pass
+
+        # Try to find JSON in markdown code blocks (original logic on original text)
         json_block_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
         match = re.search(json_block_pattern, text, re.DOTALL)
         if match:
             try:
-                return json.loads(match.group(1))
+                block = self._truncate_at_balanced_brace(match.group(1).strip())
+                return json.loads(block)
             except json.JSONDecodeError:
                 pass
 
@@ -307,8 +383,8 @@ class ModelManager:
         # Tokenize
         inputs = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=2048)
 
-        # Move to device
-        if self.device != "cpu" and not hasattr(self.model, "device"):
+        # Move to device so inputs match model (avoids CPU/MPS mismatch)
+        if self.device != "cpu":
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         # Generate
@@ -323,12 +399,17 @@ class ModelManager:
                 eos_token_id=self.tokenizer.eos_token_id
             )
 
+        # Move output to CPU before decode to avoid device-specific issues (MPS/CUDA)
+        output_ids = outputs[0]
+        if self.device != "cpu":
+            output_ids = output_ids.cpu()
+
         # Decode
-        generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        generated_text = self.tokenizer.decode(output_ids, skip_special_tokens=True)
 
         # Extract the new tokens (response only)
         input_length = inputs['input_ids'].shape[1]
-        response_text = self.tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
+        response_text = self.tokenizer.decode(output_ids[input_length:], skip_special_tokens=True)
 
         # Extract JSON
         extracted_json = self._extract_json_from_text(response_text)

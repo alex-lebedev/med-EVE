@@ -5,3 +5,13 @@ ANC:
   - pattern_id: p_inflam_iron_seq
     relation: SUPPORTS
     rationale: "Elevated ANC can support inflammatory context; leukocytosis often accompanies acute or chronic inflammation."
+
+# sTfR (soluble transferrin receptor): elevated supports true iron deficiency; helps differentiate from anemia of inflammation.
+sTfR:
+  - pattern_id: p_iron_def
+    relation: SUPPORTS
+    rationale: "Elevated sTfR supports true iron deficiency; helps differentiate from inflammation-mediated iron sequestration."
+Soluble transferrin receptor:
+  - pattern_id: p_iron_def
+    relation: SUPPORTS
+    rationale: "Elevated sTfR supports true iron deficiency; helps differentiate from anemia of inflammation."

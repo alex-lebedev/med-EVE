@@ -62,22 +62,15 @@ The `/run` endpoint implements a 5-stage medical reasoning pipeline:
     - Rule-based hypothesis generation from candidate scores
     - Generates multiple hypotheses for differential diagnosis
     - Hardcoded patient actions
-  - **Model Mode (Agentic)**:
-    - **Hypothesis Generation Agent** (Always Used):
-      - Uses MedGemma to generate multiple hypotheses with nuanced reasoning
-      - Maps evidence to knowledge graph edge IDs
-      - Recommends next tests with rationale
-      - Explains "what would change my mind"
-    - **Test Recommendation Agent** (When Ambiguity Exists):
-      - Called when top 2 hypotheses within 0.15 confidence
-      - Prioritizes tests by clinical utility and cost-benefit
-      - Explains expected impact of each test
-    - **Action Generation Agent** (Always Used):
-      - Generates context-aware patient actions
-      - Considers patient age, comorbidities, clinical guidelines
-      - Categorizes into safe buckets
-- **Output**: `ReasonerOutput` dict with `hypotheses`, `patient_actions`, `red_flags`
-- **Events**: `STEP_START`, `AGENT_DECISION`, `MODEL_CALLED`, `STEP_END`
+  - **Model Mode (Hybrid by default)**:
+    - **Hybrid architecture**: KG-grounded reasoning with model-augmented ranking and explanations.
+    - Primary hypothesis list is **always** built via lite (rule-based) for reliable schema; MedGemma is then used only for:
+      - **Ranking**: Short prompt returns a line like `H1=0.8 H2=0.5`; confidences are updated in place.
+      - **Reasoning prose**: For top 1–2 hypotheses, a one-sentence “why is this condition most likely?” is generated and attached to `hypothesis.reasoning`.
+    - **Case impression** (after guardrails): Optional model call for 2–4 sentence summary; emits `MODEL_REASONING_START`/`MODEL_REASONING_END` for UI.
+    - **Optional agents** (gated by env, off by default): Full JSON hypothesis generation (`USE_HYPOTHESIS_GENERATION_MODEL`), action generation (`USE_ACTION_GENERATION_MODEL`), novel insight (`USE_NOVEL_INSIGHT_MODEL`).
+  - **Events**: `STEP_START`, `MODEL_REASONING_START`, `MODEL_REASONING_END`, `AGENT_DECISION`, `MODEL_CALLED`, `STEP_END`
+- **Output**: `ReasonerOutput` dict with `hypotheses` (each may have `reasoning`), `patient_actions`, `red_flags`
 
 ### 5. GUARDRAILS
 - **Module**: `backend/core/guardrails.py`

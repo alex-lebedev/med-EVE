@@ -10,12 +10,8 @@ from .events import Step
 with open(os.path.join(os.path.dirname(__file__), 'marker_to_node.yml')) as f:
     MARKER_TO_NODE = yaml.safe_load(f)
 
-def select_context(normalized_labs, patient_context, events_list=None):
-    # Extract abnormal markers
-    abnormal_markers = [lab['marker'] for lab in normalized_labs if lab['status'] != 'NORMAL']
-    abnormal_marker_node_ids = sorted([MARKER_TO_NODE.get(m, f"m_{m.lower().replace(' ', '_')}") for m in abnormal_markers])
-
-    # Rule-based pattern detection (fallback)
+def _rule_based_signals(abnormal_markers):
+    """Rule-based pattern IDs (fallback when subgraph-derived signals are empty)."""
     signals = []
     if any(m in abnormal_markers for m in ['Ferritin', 'Iron', 'TSAT', 'Hb']):
         signals.append("p_iron_def")
@@ -25,6 +21,35 @@ def select_context(normalized_labs, patient_context, events_list=None):
         signals.append("p_inflam_iron_seq")
     if 'ANC' in abnormal_markers:
         signals.append("p_inflam_iron_seq")
+    return signals
+
+
+def _marker_to_nid(marker: str) -> str:
+    """Canonical marker name -> node id (same order as abnormal_markers for downstream pairing)."""
+    return MARKER_TO_NODE.get(marker, f"m_{marker.lower().replace(' ', '_')}")
+
+
+def select_context(normalized_labs, patient_context, events_list=None):
+    # Extract abnormal markers and anchor node ids in same order (for correct nid<->label pairing)
+    abnormal_markers = [lab['marker'] for lab in normalized_labs if lab['status'] != 'NORMAL']
+    abnormal_marker_node_ids = [_marker_to_nid(m) for m in abnormal_markers]
+
+    # Get subgraph from KG based on anchors (pass sorted ids for deterministic subgraph)
+    subgraph = kg_store.subgraph_from_markers(sorted(set(abnormal_marker_node_ids)))
+    subgraph_node_ids = {n["id"] for n in (subgraph.get("nodes") or [])}
+
+    # Derive signals from subgraph: pattern and condition node IDs in subgraph
+    derived_signals = []
+    for n in (subgraph.get("nodes") or []):
+        if n.get("type") in ("Pattern", "Condition"):
+            derived_signals.append(n["id"])
+    derived_signals = sorted(derived_signals)
+
+    # Fallback: if no pattern/condition in subgraph, use rule-based signals
+    if not derived_signals:
+        signals = _rule_based_signals(abnormal_markers)
+    else:
+        signals = derived_signals
 
     # Check if we should use model for context selection
     context = {
@@ -60,18 +85,14 @@ def select_context(normalized_labs, patient_context, events_list=None):
                 events_list=events_list,
                 step=Step.CONTEXT_SELECT
             )
-            
             if agent_response.get('use_model') and agent_response.get('result'):
                 model_output = agent_response['result']
-                
-                # Extract patterns from model output
+                # Extract patterns from model output; merge with derived signals (filter to subgraph)
                 model_patterns = model_output.get('patterns', [])
                 if model_patterns:
-                    # Use model-identified patterns (merge with rule-based)
                     model_pattern_ids = [p.get('pattern_id') for p in model_patterns if p.get('pattern_id')]
-                    signals = list(set(signals + model_pattern_ids))  # Merge, remove duplicates
-                
-                # Extract missing tests if provided
+                    merged = set(signals) | {pid for pid in model_pattern_ids if pid in subgraph_node_ids}
+                    signals = sorted(merged)
                 missing_tests = model_output.get('missing_tests', [])
             else:
                 missing_tests = []
@@ -98,8 +119,4 @@ def select_context(normalized_labs, patient_context, events_list=None):
         "normalized_labs": normalized_labs,
         "missing_key_tests": missing_tests
     }
-
-    # Get subgraph from KG based on markers
-    subgraph = kg_store.subgraph_from_markers(abnormal_marker_node_ids)
-
     return case_card, subgraph

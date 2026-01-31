@@ -1,10 +1,11 @@
-from app import run_pipeline, load_cases
+from app import _run_pipeline, load_cases
 
 def main():
     cases = load_cases()
     results = {}
     for cid in cases:
-        result = run_pipeline({"case_id": cid})
+        case = cases[cid]
+        result = _run_pipeline(case, [])
         scenario = cases[cid]['meta']['scenario']
         guardrail_status = result['guardrail_report']['status']
         # Simple check: for gotcha case, expect FAIL if iron action present

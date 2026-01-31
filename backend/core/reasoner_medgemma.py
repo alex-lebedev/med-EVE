@@ -1,13 +1,59 @@
 from .model_manager import model_manager
 from .agent_manager import agent_manager
-from .events import Step
+from .kg_store import kg_store
+from .events import Step, emit_event, EventType, model_reasoning_start, model_reasoning_end
 import json
+import os
+import re
+import time
 
 PATTERN_TO_CONDITION = {
     "p_iron_def": "Iron deficiency anemia",
     "p_inflam_iron_seq": "Anemia of inflammation",
     "p_hypothyroid": "Hypothyroidism"
 }
+
+def _condition_label(pattern_id: str, evidence_bundle: dict) -> str:
+    """Resolve condition name from PATTERN_TO_CONDITION, then kg_store, then subgraph; last resort 'Unknown condition'."""
+    if pattern_id in PATTERN_TO_CONDITION:
+        return PATTERN_TO_CONDITION[pattern_id]
+    if pattern_id in kg_store.nodes:
+        return kg_store.nodes[pattern_id].get("label") or "Unknown condition"
+    subgraph = evidence_bundle.get("subgraph") or {}
+    for n in (subgraph.get("nodes") or []):
+        if n.get("id") == pattern_id:
+            return n.get("label") or "Unknown condition"
+    return "Unknown condition"
+
+
+def _trim_subgraph_for_prompt(subgraph: dict) -> dict:
+    """Return a minimal subgraph (id, type, label per node; id, from, to, relation per edge) for shorter prompts.
+    Optional env HYPOTHESIS_SUBGRAPH_MAX_NODES / HYPOTHESIS_SUBGRAPH_MAX_EDGES (0 = no cap) limit size for small token budgets."""
+    if not subgraph:
+        return {"nodes": [], "edges": []}
+    nodes = []
+    for n in subgraph.get("nodes") or []:
+        nodes.append({
+            "id": n.get("id"),
+            "type": n.get("type"),
+            "label": n.get("label"),
+        })
+    edges = []
+    for e in subgraph.get("edges") or []:
+        edges.append({
+            "id": e.get("id"),
+            "from": e.get("from"),
+            "to": e.get("to"),
+            "relation": e.get("relation"),
+        })
+    max_nodes = int(os.getenv("HYPOTHESIS_SUBGRAPH_MAX_NODES", "0") or "0")
+    max_edges = int(os.getenv("HYPOTHESIS_SUBGRAPH_MAX_EDGES", "0") or "0")
+    if max_nodes > 0:
+        nodes = nodes[:max_nodes]
+    if max_edges > 0:
+        edges = edges[:max_edges]
+    return {"nodes": nodes, "edges": edges}
+
 
 def _has_ambiguity(hypotheses):
     """Check if hypotheses have ambiguity (top 2 within threshold)"""
@@ -41,7 +87,7 @@ def _reason_lite_mode(case_card, evidence_bundle):
         if confidence < MIN_CONFIDENCE_THRESHOLD:
             continue
 
-        condition = PATTERN_TO_CONDITION.get(pattern_id, "Unknown condition")
+        condition = _condition_label(pattern_id, evidence_bundle)
 
         # Build evidence for this pattern
         evidence = []
@@ -95,7 +141,8 @@ def _reason_lite_mode(case_card, evidence_bundle):
             "evidence": evidence,
             "counter_evidence": counter_evidence,
             "next_tests": next_tests,
-            "what_would_change_my_mind": what_would_change_mind
+            "what_would_change_my_mind": what_would_change_mind,
+            "reasoning": "",
         }
 
         hypotheses.append(hypothesis)
@@ -125,155 +172,285 @@ def _reason_lite_mode(case_card, evidence_bundle):
     return {
         "hypotheses": hypotheses,
         "patient_actions": patient_actions,
-        "red_flags": red_flags
+        "red_flags": red_flags,
+        "hypotheses_valid": len(hypotheses) > 0,
+        "provisional": False,
+        "novel_insights": [],
+        "novel_actions": [],
+        "provenance": {
+            "kg_grounded": True,
+            "notes": "Lite mode: KG-grounded reasoning only."
+        }
     }
 
-def reason(case_card, evidence_bundle, events_list=None):
-    if model_manager.lite_mode:
-        return _reason_lite_mode(case_card, evidence_bundle)
-    else:
-        # Use Hypothesis Generation Agent (always uses model)
-        try:
-            candidate_patterns = []
-            for pattern_id, score in evidence_bundle.get('candidate_scores', {}).items():
-                candidate_patterns.append({
-                    "pattern_id": pattern_id,
-                    "confidence": score,
-                    "condition": PATTERN_TO_CONDITION.get(pattern_id, "Unknown condition")
-                })
+# Limits for hypothesis prompt (smaller payload = faster inference)
+TOP_N_CANDIDATE_PATTERNS = int(os.getenv("HYPOTHESIS_TOP_PATTERNS", "5"))
+MAX_SUPPORTS_IN_PROMPT = int(os.getenv("HYPOTHESIS_MAX_SUPPORTS", "15"))
+MAX_CONTRADICTIONS_IN_PROMPT = int(os.getenv("HYPOTHESIS_MAX_CONTRADICTIONS", "15"))
+MAX_DISCRIMINATORS_IN_PROMPT = int(os.getenv("HYPOTHESIS_MAX_DISCRIMINATORS", "20"))
 
+# Hybrid: rank top N hypotheses with model; add reasoning for top 1-2
+HYBRID_RANK_TOP_N = int(os.getenv("HYBRID_RANK_TOP_N", "5"))
+HYBRID_REASON_TOP_N = int(os.getenv("HYBRID_REASON_TOP_N", "2"))
+
+
+def _parse_ranking_line(text: str) -> dict:
+    """Parse a line like 'H1=0.8 H2=0.5 H3=0.3' or 'H1=0.8, H2=0.5' into {id: confidence}."""
+    out = {}
+    if not text or not isinstance(text, str):
+        return out
+    # Match H1=0.8, H2=0.5, etc. (id = H followed by digits, value = float)
+    for m in re.finditer(r"(H\d+)\s*=\s*([0-9]*\.?[0-9]+)", text.strip(), re.IGNORECASE):
+        hid, val = m.group(1), m.group(2)
+        try:
+            v = float(val)
+            if 0 <= v <= 1:
+                out[hid.upper()] = v
+        except ValueError:
+            pass
+    return out
+
+
+def _model_rank_hypotheses(hypotheses: list, lab_summary: str, events_list=None) -> None:
+    """Call model with short prompt to get ranking line; update hypothesis confidence in place."""
+    if not hypotheses or not model_manager.model_loaded:
+        return
+    top = hypotheses[:HYBRID_RANK_TOP_N]
+    line = "Hypotheses: " + "; ".join(f"{h['id']}={h.get('name','')} (current {h.get('confidence',0):.2f})" for h in top)
+    prompt = f"Given lab summary: {lab_summary[:200]}. Rank confidence 0-1 for each. Reply with one line only, e.g. H1=0.8 H2=0.5 H3=0.3.\n{line}\nYour line:"
+    try:
+        resp = model_manager.generate(
+            system_prompt="You are a clinical assistant. Reply with only a single line of the form H1=x H2=y etc with numbers between 0 and 1.",
+            user_prompt=prompt,
+            max_tokens=64,
+            temperature=0.2,
+            top_p=0.9,
+        )
+        text = (resp.get("text") or "").strip()
+        ranking = _parse_ranking_line(text)
+        if ranking:
+            for h in hypotheses:
+                hid = (h.get("id") or "").upper()
+                if hid in ranking:
+                    h["confidence"] = ranking[hid]
+    except Exception:
+        pass
+
+
+def _model_reasoning_for_hypothesis(condition_name: str, lab_summary: str) -> str:
+    """One-sentence reason why condition is most likely. Returns empty string on failure."""
+    if not model_manager.model_loaded:
+        return ""
+    prompt = f"Labs: {lab_summary[:150]}. In one sentence, why is {condition_name} most likely here? Reply with one sentence only."
+    try:
+        resp = model_manager.generate(
+            system_prompt="You are a clinical assistant. Reply with one short sentence only.",
+            user_prompt=prompt,
+            max_tokens=80,
+            temperature=0.3,
+            top_p=0.9,
+        )
+        text = (resp.get("text") or "").strip()
+        if text and len(text) > 10:
+            return text[:500]
+    except Exception:
+        pass
+    return ""
+
+
+def reason(case_card, evidence_bundle, events_list=None):
+    # 1. Always build primary hypothesis list via lite (reliable schema)
+    base_result = _reason_lite_mode(case_card, evidence_bundle)
+    hypotheses = base_result.get("hypotheses") or []
+    patient_actions = base_result.get("patient_actions") or []
+    red_flags = base_result.get("red_flags") or []
+    novel_insights = base_result.get("novel_insights") or []
+    novel_actions = base_result.get("novel_actions") or []
+    provenance = base_result.get("provenance") or {"kg_grounded": True, "notes": "Lite mode: KG-grounded reasoning only."}
+
+    if model_manager.lite_mode:
+        return base_result
+
+    # Model mode: hybrid = lite + model ranking + reasoning prose (default)
+    use_hypothesis_json = os.getenv("USE_HYPOTHESIS_GENERATION_MODEL", "").strip().lower() in ("1", "true", "yes")
+    if use_hypothesis_json and model_manager.model_loaded:
+        # Optional: full hypothesis_generation JSON path (fallback if explicitly enabled)
+        try:
+            context = {"case_card": case_card, "evidence_bundle": evidence_bundle}
+            scores = evidence_bundle.get("candidate_scores", {})
+            sorted_patterns = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:TOP_N_CANDIDATE_PATTERNS]
+            candidate_patterns = [
+                {"pattern_id": pid, "confidence": score, "condition": PATTERN_TO_CONDITION.get(pid, "Unknown condition")}
+                for pid, score in sorted_patterns
+            ]
             evidence_data = {
                 "candidate_patterns_json": json.dumps(candidate_patterns, indent=2),
                 "evidence_bundle_json": json.dumps({
-                    "supports": evidence_bundle.get('supports', []),
-                    "contradictions": evidence_bundle.get('contradictions', []),
-                    "top_discriminators": evidence_bundle.get('top_discriminators', []),
-                    "candidate_scores": evidence_bundle.get('candidate_scores', {})
+                    "supports": (evidence_bundle.get("supports") or [])[:MAX_SUPPORTS_IN_PROMPT],
+                    "contradictions": (evidence_bundle.get("contradictions") or [])[:MAX_CONTRADICTIONS_IN_PROMPT],
+                    "top_discriminators": (evidence_bundle.get("top_discriminators") or [])[:MAX_DISCRIMINATORS_IN_PROMPT],
+                    "candidate_scores": dict(sorted_patterns),
                 }, indent=2),
-                "patient_context_json": json.dumps(case_card.get('patient_context', {}), indent=2),
-                "subgraph_json": json.dumps(evidence_bundle.get('subgraph', {}), indent=2)
+                "patient_context_json": json.dumps(case_card.get("patient_context", {}), indent=2),
+                "subgraph_json": json.dumps(_trim_subgraph_for_prompt(evidence_bundle.get("subgraph", {})), indent=2),
             }
-
-            context = {
-                'case_card': case_card,
-                'evidence_bundle': evidence_bundle
-            }
-
             agent_response = agent_manager.call_agent(
-                'hypothesis_generation',
-                context,
-                evidence_data,
-                events_list=events_list,
-                step=Step.REASON
+                "hypothesis_generation", context, evidence_data, events_list=events_list, step=Step.REASON
             )
-
-            if agent_response.get('use_model') and agent_response.get('result'):
-                model_output = agent_response['result']
-                hypotheses_raw = model_output.get('hypotheses', [])
-                patient_actions_raw = model_output.get('patient_actions', [])
-                red_flags = model_output.get('red_flags', [])
-
-                validated_hypotheses = []
-                for hypo in hypotheses_raw:
-                    validated_hypo = {
-                        "id": hypo.get('id', 'H1'),
-                        "name": hypo.get('name', 'Unknown condition'),
-                        "confidence": float(hypo.get('confidence', 0.5)),
-                        "evidence": hypo.get('evidence', []),
-                        "counter_evidence": hypo.get('counter_evidence', []),
-                        "next_tests": hypo.get('next_tests', []),
-                        "what_would_change_my_mind": hypo.get('what_would_change_my_mind', [])
-                    }
-                    validated_hypotheses.append(validated_hypo)
-
-                # If actions not provided or empty, call action generation agent
-                if (not patient_actions_raw or len(patient_actions_raw) == 0) and not model_manager.lite_mode:
+            model_output = agent_response.get("result")
+            if agent_response.get("use_model") and not model_output and agent_response.get("raw_output"):
+                fallback = model_manager._extract_json_from_text(agent_response.get("raw_output") or "")
+                if isinstance(fallback, dict) and fallback.get("hypotheses"):
+                    model_output = fallback
+            if agent_response.get("use_model") and model_output and model_output.get("hypotheses"):
+                validated = []
+                for h in model_output.get("hypotheses", []):
+                    validated.append({
+                        "id": h.get("id", "H1"),
+                        "name": h.get("name", "Unknown condition"),
+                        "confidence": float(h.get("confidence", 0.5)),
+                        "evidence": h.get("evidence", []),
+                        "counter_evidence": h.get("counter_evidence", []),
+                        "next_tests": h.get("next_tests", []),
+                        "what_would_change_my_mind": h.get("what_would_change_my_mind", []),
+                        "reasoning": h.get("reasoning", ""),
+                    })
+                hypotheses = validated
+                patient_actions = model_output.get("patient_actions") or patient_actions
+                red_flags = model_output.get("red_flags") or red_flags
+                provenance = {"kg_grounded": True, "notes": "Model hypothesis JSON used."}
+                # Optional action_generation / novel_insight (gated by env)
+                if agent_manager.should_use_agent("action_generation", {"hypotheses": hypotheses, "case_card": case_card}):
                     try:
-                        action_agent_data = {
-                            "hypotheses_json": json.dumps(validated_hypotheses, indent=2),
-                            "evidence_bundle_json": json.dumps({
-                                "supports": evidence_bundle.get('supports', []),
-                                "contradictions": evidence_bundle.get('contradictions', [])
-                            }, indent=2),
-                            "patient_context_json": json.dumps(case_card.get('patient_context', {}), indent=2)
+                        action_data = {
+                            "hypotheses_json": json.dumps(hypotheses, indent=2),
+                            "evidence_bundle_json": json.dumps({"supports": evidence_bundle.get("supports", []), "contradictions": evidence_bundle.get("contradictions", [])}, indent=2),
+                            "patient_context_json": json.dumps(case_card.get("patient_context", {}), indent=2),
                         }
-                        action_agent_response = agent_manager.call_agent(
-                            'action_generation',
-                            {'hypotheses': validated_hypotheses, 'case_card': case_card},
-                            action_agent_data,
-                            events_list=events_list,
-                            step=Step.REASON
-                        )
-                        if action_agent_response.get('use_model') and action_agent_response.get('result'):
-                            patient_actions_raw = action_agent_response['result'].get('patient_actions', [])
+                        action_resp = agent_manager.call_agent("action_generation", {"hypotheses": hypotheses, "case_card": case_card}, action_data, events_list=events_list, step=Step.REASON)
+                        if action_resp.get("use_model") and action_resp.get("result") and action_resp["result"].get("patient_actions"):
+                            patient_actions = action_resp["result"]["patient_actions"]
                     except Exception:
                         pass
-
-                patient_actions = patient_actions_raw
-
-                # Check for ambiguity and call test recommendation agent if needed
-                has_amb = _has_ambiguity(validated_hypotheses)
-                no_tests = not any(h.get('next_tests') for h in validated_hypotheses)
-
-                if (has_amb or no_tests) and not model_manager.lite_mode:
+                novelty_context = {
+                    "hypotheses": hypotheses, "case_card": case_card, "evidence_bundle": evidence_bundle,
+                    "top_confidence": (hypotheses[0].get("confidence", 0) if hypotheses else 0),
+                    "confidence_margin": (hypotheses[0].get("confidence", 0) - hypotheses[1].get("confidence", 0)) if len(hypotheses) > 1 else 1.0,
+                    "contradiction_count": len(evidence_bundle.get("contradictions", [])),
+                    "support_count": len(evidence_bundle.get("supports", [])),
+                    "force_novelty": os.getenv("USE_NOVEL_INSIGHT_MODEL", "").strip().lower() == "force",
+                }
+                if agent_manager.should_use_agent("novel_insight", novelty_context):
                     try:
-                        available_tests = [
-                            {"test_id": node['id'], "label": node['label']}
-                            for node in evidence_bundle.get('subgraph', {}).get('nodes', [])
-                            if node.get('type') == 'Test'
-                        ]
-                        test_agent_data = {
-                            "hypotheses_json": json.dumps(validated_hypotheses, indent=2),
-                            "already_performed_tests_json": json.dumps([], indent=2),
-                            "available_tests_json": json.dumps(available_tests, indent=2),
-                            "patient_context_json": json.dumps(case_card.get('patient_context', {}), indent=2)
+                        novelty_data = {
+                            "case_card_json": json.dumps(case_card, indent=2),
+                            "hypotheses_json": json.dumps(hypotheses, indent=2),
+                            "evidence_bundle_json": json.dumps({"supports": evidence_bundle.get("supports", []), "contradictions": evidence_bundle.get("contradictions", []), "candidate_scores": evidence_bundle.get("candidate_scores", {}), "top_discriminators": evidence_bundle.get("top_discriminators", [])}, indent=2),
+                            "subgraph_json": json.dumps(evidence_bundle.get("subgraph", {}), indent=2),
                         }
-                        test_agent_response = agent_manager.call_agent(
-                            'test_recommendation',
-                            {'hypotheses': validated_hypotheses},
-                            test_agent_data,
-                            events_list=events_list,
-                            step=Step.REASON
-                        )
-                        if test_agent_response.get('use_model') and test_agent_response.get('result'):
-                            recommended_tests = test_agent_response['result'].get('recommended_tests', [])
-                            for hypo in validated_hypotheses:
-                                if not hypo.get('next_tests') or len(hypo['next_tests']) == 0:
-                                    high_priority = [t for t in recommended_tests if t.get('priority') == 'high']
-                                    if high_priority:
-                                        hypo['next_tests'] = high_priority[:2]
+                        novelty_resp = agent_manager.call_agent("novel_insight", novelty_context, novelty_data, events_list=events_list, step=Step.REASON)
+                        if novelty_resp.get("use_model") and novelty_resp.get("result"):
+                            novel_insights = novelty_resp["result"].get("novel_insights") or []
+                            novel_actions = novelty_resp["result"].get("novel_actions") or []
+                            for i in novel_insights:
+                                i["outside_kg"] = True
+                            for a in novel_actions:
+                                a["outside_kg"] = True
+                            if novel_insights or novel_actions:
+                                provenance["kg_grounded"] = False
+                                provenance["notes"] = "Outside-KG ideas from novelty agent."
                     except Exception:
                         pass
-
                 return {
-                    "hypotheses": validated_hypotheses,
+                    "hypotheses": hypotheses,
                     "patient_actions": patient_actions,
                     "red_flags": red_flags,
+                    "hypotheses_valid": len(hypotheses) > 0,
+                    "provisional": False,
+                    "novel_insights": novel_insights,
+                    "novel_actions": novel_actions,
+                    "provenance": provenance,
                     "model_used": True,
-                    "raw_model_output": agent_response.get('raw_output')
+                    "raw_model_output": agent_response.get("raw_output"),
                 }
-            else:
-                # Fallback to lite mode if model call failed (do not change global lite_mode)
-                if events_list:
-                    from .events import emit_event, EventType
-                    emit_event(events_list, Step.REASON, EventType.MODEL_CALLED, {
-                        'agent_type': 'hypothesis_generation',
-                        'prompt_type': 'hypothesis_generation',
-                        'status': 'fallback',
-                        'error': agent_response.get('error', 'Model call failed'),
-                        'response_time_ms': 0
-                    })
-                return _reason_lite_mode(case_card, evidence_bundle)
-
-        except Exception as e:
-            # Fallback to lite mode on error (do not change global lite_mode)
+        except Exception:
+            pass
+        # Fall through to hybrid if JSON path failed
+    # Hybrid: lite + model ranking + reasoning prose
+    if model_manager.model_loaded and hypotheses:
+        abnormal = case_card.get("abnormal_markers") or []
+        lab_summary = "Abnormal: " + ", ".join(abnormal[:10]) if abnormal else "No abnormal markers"
+        # Ranking
+        if events_list:
+            model_reasoning_start(events_list, Step.REASON, "MedGemma is ranking hypotheses...")
+        t0 = time.perf_counter()
+        _model_rank_hypotheses(hypotheses, lab_summary, events_list)
+        if events_list:
+            model_reasoning_end(events_list, Step.REASON, response_time_ms=(time.perf_counter() - t0) * 1000)
+        # Reasoning prose for top 1-2
+        for h in hypotheses[:HYBRID_REASON_TOP_N]:
+            cond = (h.get("name") or "").split(" (")[0].strip() or "This condition"
             if events_list:
-                from .events import emit_event, EventType
-                emit_event(events_list, Step.REASON, EventType.MODEL_CALLED, {
-                    'agent_type': 'hypothesis_generation',
-                    'prompt_type': 'hypothesis_generation',
-                    'status': 'error',
-                    'error': str(e),
-                    'response_time_ms': 0
-                })
-            return _reason_lite_mode(case_card, evidence_bundle)
+                model_reasoning_start(events_list, Step.REASON, "MedGemma is explaining...")
+            t1 = time.perf_counter()
+            reasoning_text = _model_reasoning_for_hypothesis(cond, lab_summary)
+            if events_list:
+                model_reasoning_end(events_list, Step.REASON, response_time_ms=(time.perf_counter() - t1) * 1000)
+            if reasoning_text:
+                h["reasoning"] = reasoning_text
+        provenance["notes"] = "Hybrid: KG-grounded reasoning with model-augmented ranking and explanations."
+    # Optional action_generation (gated; default off)
+    if agent_manager.should_use_agent("action_generation", {"hypotheses": hypotheses, "case_card": case_card}):
+        try:
+            action_data = {
+                "hypotheses_json": json.dumps(hypotheses, indent=2),
+                "evidence_bundle_json": json.dumps({"supports": evidence_bundle.get("supports", []), "contradictions": evidence_bundle.get("contradictions", [])}, indent=2),
+                "patient_context_json": json.dumps(case_card.get("patient_context", {}), indent=2),
+            }
+            action_resp = agent_manager.call_agent("action_generation", {"hypotheses": hypotheses, "case_card": case_card}, action_data, events_list=events_list, step=Step.REASON)
+            if action_resp.get("use_model") and action_resp.get("result") and action_resp["result"].get("patient_actions"):
+                patient_actions = action_resp["result"]["patient_actions"]
+        except Exception:
+            pass
+    # Optional novel_insight (gated; default off)
+    novelty_context = {
+        "hypotheses": hypotheses, "case_card": case_card, "evidence_bundle": evidence_bundle,
+        "top_confidence": (hypotheses[0].get("confidence", 0) if hypotheses else 0),
+        "confidence_margin": (hypotheses[0].get("confidence", 0) - hypotheses[1].get("confidence", 0)) if len(hypotheses) > 1 else 1.0,
+        "contradiction_count": len(evidence_bundle.get("contradictions", [])),
+        "support_count": len(evidence_bundle.get("supports", [])),
+        "force_novelty": os.getenv("USE_NOVEL_INSIGHT_MODEL", "").strip().lower() == "force",
+    }
+    if agent_manager.should_use_agent("novel_insight", novelty_context):
+        try:
+            novelty_data = {
+                "case_card_json": json.dumps(case_card, indent=2),
+                "hypotheses_json": json.dumps(hypotheses, indent=2),
+                "evidence_bundle_json": json.dumps({"supports": evidence_bundle.get("supports", []), "contradictions": evidence_bundle.get("contradictions", []), "candidate_scores": evidence_bundle.get("candidate_scores", {}), "top_discriminators": evidence_bundle.get("top_discriminators", [])}, indent=2),
+                "subgraph_json": json.dumps(evidence_bundle.get("subgraph", {}), indent=2),
+            }
+            novelty_resp = agent_manager.call_agent("novel_insight", novelty_context, novelty_data, events_list=events_list, step=Step.REASON)
+            if novelty_resp.get("use_model") and novelty_resp.get("result"):
+                novel_insights = novelty_resp["result"].get("novel_insights") or []
+                novel_actions = novelty_resp["result"].get("novel_actions") or []
+                for i in novel_insights:
+                    i["outside_kg"] = True
+                for a in novel_actions:
+                    a["outside_kg"] = True
+                if novel_insights or novel_actions:
+                    provenance["kg_grounded"] = False
+                    provenance["notes"] = "Outside-KG ideas from novelty agent."
+        except Exception:
+            pass
+
+    return {
+        "hypotheses": hypotheses,
+        "patient_actions": patient_actions,
+        "red_flags": red_flags,
+        "hypotheses_valid": len(hypotheses) > 0,
+        "provisional": False,
+        "novel_insights": novel_insights,
+        "novel_actions": novel_actions,
+        "provenance": provenance,
+        "model_used": model_manager.model_loaded,
+    }

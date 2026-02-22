@@ -5,7 +5,7 @@ Model mode: prompt-based 2–4 sentence summary. Lite mode: rule-based string.
 import os
 import time
 from .model_manager import model_manager
-from .events import Step, model_reasoning_start, model_reasoning_end
+from .events import Step, model_reasoning_start, model_reasoning_end, model_called, agent_decision
 
 
 def _lite_impression(case_card: dict, reasoner_output: dict, guardrail_report: dict) -> str:
@@ -66,14 +66,18 @@ def _model_impression(case_card: dict, reasoner_output: dict, guardrail_report: 
         elapsed_ms = (time.perf_counter() - t0) * 1000
         if events_list is not None:
             model_reasoning_end(events_list, Step.FINAL, response_time_ms=elapsed_ms)
+            model_called(events_list, Step.FINAL, "case_impression", "case_impression",
+                         response_time_ms=elapsed_ms,
+                         cached=response.get("cached", False) if isinstance(response, dict) else False)
         if response and isinstance(response, dict):
             text = (response.get("text") or "").strip()
             if len(text) > 10:
                 return text
-    except Exception:
+    except Exception as e:
         if events_list is not None:
             model_reasoning_end(events_list, Step.FINAL, response_time_ms=0)
-        pass
+            model_called(events_list, Step.FINAL, "case_impression", "case_impression",
+                         status="error", error=str(e))
     return _lite_impression(case_card, reasoner_output, guardrail_report)
 
 
@@ -89,6 +93,11 @@ def generate_case_impression(
     Set USE_CASE_IMPRESSION_MODEL=0 to use lite impression even when model is loaded (fewer model calls).
     """
     use_impression_model = os.getenv("USE_CASE_IMPRESSION_MODEL", "1").strip().lower() not in ("0", "false")
-    if model_manager.lite_mode or not model_manager.model_loaded or not use_impression_model:
+    _use_model = not model_manager.lite_mode and model_manager.model_loaded and use_impression_model
+    if events_list is not None:
+        agent_decision(events_list, Step.FINAL, "case_impression",
+                       "use_model" if _use_model else "use_rules",
+                       "Model impression" if _use_model else "Lite impression (model unavailable or disabled)")
+    if not _use_model:
         return _lite_impression(case_card, reasoner_output, guardrail_report)
     return _model_impression(case_card, reasoner_output, guardrail_report, events_list)

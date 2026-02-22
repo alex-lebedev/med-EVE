@@ -7,11 +7,14 @@ import logging
 import os
 import re
 import time
+import random
 from datetime import datetime
 from copy import deepcopy
 from typing import Optional
+import uuid
 import queue
 from core import lab_normalizer, context_selector, evidence_builder, reasoner_medgemma, guardrails, events
+from core import critic_medgemma, explanation_medgemma
 from core import dynamic_graph
 from core.case_impression import generate_case_impression
 from core import symptom_mapper
@@ -25,9 +28,19 @@ class AnalyzeRequest(BaseModel):
     text: str
     merge_with_current: bool = False
 
+class SessionStartRequest(BaseModel):
+    text: str
+
+class SessionMessageRequest(BaseModel):
+    message: str
+    intent: Optional[str] = None  # "explanation" or "new_info"; overrides auto-classification
+
 # In-memory current case (set after /run or /analyze; used when merge_with_current=True)
 current_case: Optional[dict] = None
 current_output: Optional[dict] = None
+
+# In-memory sessions for multi-turn (case + last output)
+sessions: dict = {}
 
 
 class EventList(list):
@@ -93,6 +106,42 @@ app = FastAPI()
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.INFO)
 
+
+def _configure_reproducibility_seed():
+    """
+    Configure deterministic seeds when requested.
+    Set REPRODUCIBILITY_SEED to an integer value, or "off" to disable.
+    """
+    raw = os.getenv("REPRODUCIBILITY_SEED", "42").strip().lower()
+    if raw in ("", "off", "none", "false"):
+        logger.info("REPRODUCIBILITY_SEED disabled")
+        return
+    try:
+        seed = int(raw)
+    except ValueError:
+        logger.info("Invalid REPRODUCIBILITY_SEED=%s (expected int); skipping seed setup", raw)
+        return
+
+    random.seed(seed)
+    try:
+        import numpy as np
+        np.random.seed(seed)
+    except Exception:
+        pass
+    try:
+        import torch
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    except Exception:
+        pass
+    try:
+        from transformers import set_seed
+        set_seed(seed)
+    except Exception:
+        pass
+    logger.info("REPRODUCIBILITY_SEED configured: %d", seed)
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     logger.info("REQUEST %s %s", request.method, request.url.path)
@@ -101,6 +150,8 @@ async def log_requests(request: Request, call_next):
 
 # Try to pre-load model if MODE=model is set (in background to not block server)
 import threading
+
+_configure_reproducibility_seed()
 
 def preload_model():
     """Pre-load model in background thread"""
@@ -115,9 +166,10 @@ def preload_model():
         except Exception as e:
             print(f"⚠️  Model pre-load failed (will load on first use): {e}")
 
-# Start model loading in background thread (non-blocking)
-model_thread = threading.Thread(target=preload_model, daemon=True)
-model_thread.start()
+# Start model loading in background thread (non-blocking), unless explicitly disabled.
+if os.getenv("DISABLE_MODEL_PRELOAD", "").strip().lower() not in ("1", "true", "yes"):
+    model_thread = threading.Thread(target=preload_model, daemon=True)
+    model_thread.start()
 
 app.add_middleware(
     CORSMiddleware,
@@ -251,6 +303,18 @@ def _run_pipeline(case: dict, events_list: list, emit_callback=None, merge_with_
     logger.info("PIPELINE done: REASON")
 
     t_step_start = time.time()
+    logger.info("PIPELINE start: CRITIC")
+    events.start_step(events_list, events.Step.CRITIC)
+    critic_result = critic_medgemma.run_critic(
+        reasoner_output, case_card, evidence_bundle, normalized_labs, events_list
+    )
+    if critic_result.get("ops"):
+        reasoner_output = _apply_critic_ops(reasoner_output, critic_result["ops"])
+    events.end_step(events_list, events.Step.CRITIC)
+    step_times["CRITIC"] = round(time.time() - t_step_start, 3)
+    logger.info("PIPELINE done: CRITIC")
+
+    t_step_start = time.time()
     logger.info("PIPELINE start: GUARDRAILS")
     events.start_step(events_list, events.Step.GUARDRAILS)
     guardrail_report = guardrails.check_guardrails(
@@ -270,6 +334,36 @@ def _run_pipeline(case: dict, events_list: list, emit_callback=None, merge_with_
                     del obj[idx]
                 else:
                     logger.info("Skipping guardrail patch; index out of range: %s", patch)
+            elif patch["op"] == "add":
+                path_parts = patch["path"].strip("/").split("/")
+                obj = reasoner_output
+                for part in path_parts[:-1]:
+                    if part.isdigit():
+                        obj = obj[int(part)]
+                    else:
+                        if isinstance(obj, dict):
+                            if part not in obj:
+                                obj[part] = {}
+                            obj = obj[part]
+                        else:
+                            obj = obj[int(part)]
+                target = path_parts[-1]
+                value = patch.get("value")
+                if isinstance(obj, list):
+                    if target == "-":
+                        obj.append(value)
+                    elif target.isdigit():
+                        idx = int(target)
+                        if 0 <= idx <= len(obj):
+                            obj.insert(idx, value)
+                        else:
+                            logger.info("Skipping guardrail add patch; index out of range: %s", patch)
+                    else:
+                        logger.info("Skipping guardrail add patch; invalid list target: %s", patch)
+                elif isinstance(obj, dict):
+                    obj[target] = value
+                else:
+                    logger.info("Skipping guardrail add patch; unsupported target: %s", patch)
         events.guardrail_patch_applied(events_list, events.Step.GUARDRAILS, before, reasoner_output)
     events.end_step(events_list, events.Step.GUARDRAILS)
     step_times["GUARDRAILS"] = round(time.time() - t_step_start, 3)
@@ -300,6 +394,7 @@ def _run_pipeline(case: dict, events_list: list, emit_callback=None, merge_with_
         "case_card": case_card,
         "evidence_bundle": evidence_bundle,
         "reasoner_output": reasoner_output,
+        "critic_result": critic_result,
         "guardrail_report": guardrail_report,
         "case_impression": case_impression,
         "suggested_kg_additions": suggested_kg_additions,
@@ -349,6 +444,58 @@ def _merge_parsed_into_current(existing: dict, parsed: dict) -> dict:
     merged["patient"]["context"] = {**ctx_current, **ctx_parsed}
     merged["case_id"] = existing.get("case_id") or "FromText"
     return merged
+
+
+def _apply_critic_ops(reasoner_output: dict, ops: list) -> dict:
+    """Apply critic ops to reasoner_output in-place; returns updated output."""
+    if not ops:
+        return reasoner_output
+    # Remove hypotheses by id
+    for op in ops:
+        if op.get("op") == "remove_hypothesis":
+            hid = op.get("id")
+            if not hid:
+                continue
+            reasoner_output["hypotheses"] = [
+                h for h in reasoner_output.get("hypotheses", [])
+                if (h.get("id") or "").upper() != hid
+            ]
+    # Lower confidence by id
+    for op in ops:
+        if op.get("op") == "lower_confidence":
+            hid = op.get("id")
+            val = op.get("value")
+            if not hid or val is None:
+                continue
+            for h in reasoner_output.get("hypotheses", []):
+                if (h.get("id") or "").upper() == hid:
+                    try:
+                        h["confidence"] = max(0, min(1, float(val)))
+                    except (TypeError, ValueError):
+                        pass
+    # Remove actions by scope/index
+    for op in ops:
+        if op.get("op") == "remove_action":
+            scope = op.get("scope")
+            idx = op.get("index")
+            if scope not in ("patient_actions", "novel_actions"):
+                continue
+            try:
+                idx = int(idx)
+            except (TypeError, ValueError):
+                continue
+            lst = reasoner_output.get(scope) or []
+            if 0 <= idx < len(lst):
+                del lst[idx]
+                reasoner_output[scope] = lst
+    # Re-sort hypotheses by confidence (descending)
+    if reasoner_output.get("hypotheses"):
+        reasoner_output["hypotheses"] = sorted(
+            reasoner_output["hypotheses"],
+            key=lambda h: float(h.get("confidence", 0)),
+            reverse=True,
+        )
+    return reasoner_output
 
 
 def _write_pipeline_output(case: dict, result: dict) -> Optional[str]:
@@ -502,6 +649,24 @@ def _sanitize_reasoner_output(output: Optional[dict]) -> dict:
                 actions.append(a)
     sanitized["patient_actions"] = actions
     return sanitized
+
+
+def _classify_message(message: str) -> str:
+    """Classify follow-up message into update/explanation/other."""
+    msg = (message or "").strip()
+    if not msg:
+        return "OTHER"
+    # Try to parse labs for NEW_CLINICAL_INFO
+    try:
+        parsed = text_to_case(msg)
+        if parsed.get("labs"):
+            return "NEW_CLINICAL_INFO"
+    except Exception:
+        pass
+    lower = msg.lower()
+    if any(k in lower for k in ["explain", "why", "reason", "how", "rationale"]):
+        return "EXPLANATION_REQUEST"
+    return "OTHER"
 
 
 def _stream_pipeline(case: dict, case_id: str, merge_with_current: bool = False):
@@ -725,6 +890,76 @@ def analyze_from_text_stream(body: AnalyzeRequest):
         case["case_id"] = "FromText"
 
     return _stream_pipeline(case, case["case_id"], merge_with_current=body.merge_with_current)
+
+
+@app.post("/session/start")
+def session_start(body: SessionStartRequest):
+    """Start a multi-turn session from free text."""
+    if os.getenv("MODE", "lite").lower() == "model":
+        try:
+            model_manager.wait_for_model(timeout=300.0)
+        except TimeoutError as e:
+            raise HTTPException(
+                status_code=503,
+                detail="Model did not finish loading. Please try again or check server logs.",
+            ) from e
+    try:
+        parsed = text_to_case(body.text)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    case = deepcopy(parsed)
+    case["case_id"] = "FromText"
+    events_list = []
+    result = _run_pipeline(case, events_list)
+    result["reasoner_output"] = _sanitize_reasoner_output(result.get("reasoner_output"))
+    result["case_id"] = case["case_id"]
+    result["output_path"] = _write_pipeline_output(case, result)
+    session_id = str(uuid.uuid4())
+    sessions[session_id] = {
+        "case": deepcopy(case),
+        "last_output": deepcopy(result),
+        "created_at": time.time(),
+    }
+    return {"session_id": session_id, "turn_type": "update", "output": result}
+
+
+@app.post("/session/{session_id}/message")
+def session_message(session_id: str, body: SessionMessageRequest):
+    session = sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    msg = body.message
+    if body.intent == "explanation":
+        turn_type = "EXPLANATION_REQUEST"
+    elif body.intent == "new_info":
+        turn_type = "NEW_CLINICAL_INFO"
+    else:
+        turn_type = _classify_message(msg)
+    if turn_type == "NEW_CLINICAL_INFO":
+        try:
+            parsed = text_to_case(msg)
+        except ValueError:
+            turn_type = "OTHER"
+        else:
+            merged = _merge_parsed_into_current(session["case"], parsed)
+            events_list = []
+            result = _run_pipeline(merged, events_list)
+            result["reasoner_output"] = _sanitize_reasoner_output(result.get("reasoner_output"))
+            result["case_id"] = merged.get("case_id", "FromText")
+            result["output_path"] = _write_pipeline_output(merged, result)
+            session["case"] = deepcopy(merged)
+            session["last_output"] = deepcopy(result)
+            return {"session_id": session_id, "turn_type": "update", "output": result}
+    if turn_type == "EXPLANATION_REQUEST":
+        last_output = session.get("last_output") or {}
+        explanation = explanation_medgemma.generate_explanation(
+            last_output.get("case_card") or {},
+            last_output.get("evidence_bundle") or {},
+            last_output.get("reasoner_output") or {},
+            last_output.get("normalized_labs") or [],
+        )
+        return {"session_id": session_id, "turn_type": "explanation", "explanation": explanation, "output": last_output}
+    return {"session_id": session_id, "turn_type": "other", "message": "Please add new clinical info or ask for an explanation."}
 
 @app.get("/current-case")
 def get_current_case():

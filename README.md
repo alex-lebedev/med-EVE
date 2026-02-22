@@ -4,21 +4,21 @@ A safe, transparent, and auditable medical AI system that combines knowledge gra
 
 ## Overview
 
-med-EVE is an **agentic medical reasoning pipeline** (Evidence Vector Engine) where MedGemma is used at **6 key decision points**, with the model deciding when to engage for complex reasoning:
+med-EVE is a **hybrid medical reasoning pipeline** (Evidence Vector Engine) that combines deterministic KG reasoning with flag-gated MedGemma agents:
 
-1. Normalizes lab results
-2. **Context Selection Agent**: Identifies patterns (uses model for complex cases)
-3. **Evidence Weighting Agent**: Scores evidence (uses model for rare/conflicting cases)
-4. **Hypothesis Generation Agent**: Generates differential diagnosis (always uses model)
-5. **Test Recommendation Agent**: Prioritizes tests (uses model when ambiguity exists)
-6. **Action Generation Agent**: Generates patient actions (always uses model)
-7. **Guardrail Explanation Agent**: Explains safety concerns (uses model when guardrails fail)
-8. Applies guardrails to block unsafe recommendations
-9. Provides complete transparency through event-driven traceability
+1. `LAB_NORMALIZE`
+2. `CONTEXT_SELECT`
+3. `EVIDENCE_SCORE`
+4. `REASON`
+5. `CRITIC`
+6. `GUARDRAILS`
+7. `CASE_IMPRESSION`
+
+By default, model mode uses a hybrid path (rule-grounded hypotheses with model-assisted ranking and short reasoning). Additional agent calls are feature-flagged for latency/safety control.
 
 ## Key Features
 
-- **Agentic Architecture**: MedGemma used at 6 decision points with intelligent routing
+- **Agentic Architecture**: MedGemma integration at multiple flag-gated decision points with explicit routing
 - **Knowledge Graph-Based Reasoning**: Explicit representation of medical relationships
 - **Evidence Scoring**: Transparent scoring with model-assisted dynamic weighting
 - **Multi-Layer Guardrails**: Automatic safety checks with model-generated explanations
@@ -50,6 +50,11 @@ pip install -r requirements.txt
 ```
 
 ### Run Demo
+
+**One-command runner (recommended):**
+```bash
+./run_demo.sh
+```
 
 **Lite Mode (Default - Rule-Based):**
 ```bash
@@ -155,7 +160,7 @@ First run loads the model (30–60+ s); then a short answer is generated. You sh
 
 ### Why does the first case take so long?
 
-In model mode, each case runs several model calls (hypothesis generation, often action generation, case impression, and sometimes context selection, symptom mapping, evidence weighting, test recommendation, guardrail explanation). Pipeline agents use **max_tokens=384** by default (configurable via `MEDGEMMA_MAX_TOKENS`) so runs complete reliably on laptop/MPS. Expect **2–5+ minutes per case** on a laptop (CPU or MPS), especially the first case. The simple `make model-test` runs only one short generation (64 tokens), so it finishes quickly after load.
+In model mode, each case can run several model calls depending on enabled flags. The default hybrid path uses model ranking/reasoning plus critic/case-impression (and optional symptom mapper), while full-agent mode can add context selection, evidence weighting, full hypothesis JSON, test recommendation, action generation, and guardrail explanation. Pipeline agents use **max_tokens=384** by default (configurable via `MEDGEMMA_MAX_TOKENS`) so runs complete reliably on laptop/MPS. Expect **2–5+ minutes per case** on a laptop (CPU or MPS), especially the first case. The simple `make model-test` runs only one short generation (64 tokens), so it finishes quickly after load.
 
 To reduce model calls further while keeping graph updates and hypotheses: set `USE_SYMPTOM_MAPPER_MODEL=0` (rule-based symptom mapping) and/or `USE_CASE_IMPRESSION_MODEL=0` (rule-based case impression). By default, context selection, evidence weighting, test recommendation, and guardrail explanation are **disabled**; enable with:
 - `USE_CONTEXT_SELECTION_MODEL=1`
@@ -170,75 +175,38 @@ Response fields added for novelty:
 - `reasoner_output.novel_actions`
 - `reasoner_output.provenance`
 
-### Backend port and debug endpoints
+### Switching between modes
 
-The backend is expected to run on **127.0.0.1:8000** (the frontend uses `http://localhost:8000` as its API base). Useful debug endpoints:
-
-- `POST /debug/ping` — quick check that POST requests reach the backend.
-- `POST /debug/raw-run` — returns the raw request body preview to confirm JSON is received.
-
-Recommended stability flags during troubleshooting:
-
-- `MEDGEMMA_MAX_TOKENS=384` (agent outputs stay compact and faster)
-- `USE_SYMPTOM_MAPPER_MODEL=0`
-- `USE_CASE_IMPRESSION_MODEL=0`
-- `USE_CONTEXT_SELECTION_MODEL=0`
-- `USE_EVIDENCE_WEIGHTING_MODEL=0`
-- `USE_TEST_RECOMMENDATION_MODEL=0`
-- `USE_GUARDRAIL_EXPLANATION_MODEL=0`
-- `USE_NOVEL_INSIGHT_MODEL=0`
-
-### Switching between lite and model / between models
-
-- **Lite → model:** `export MODE=model` (and optionally `MEDGEMMA_MODEL=...`), then `make demo`.
-- **Model A → model B:** Set `MEDGEMMA_MODEL` to the other model, restart (`make stop` then `make demo`). If that model wasn’t used before, it will download on first load.
+- **Lite → model:** `export MODE=model`, then `make demo`.
 - **Model → lite:** `unset MODE` or `export MODE=lite`, then `make demo`.
-
-### Inspecting the cache (what’s using space)
-
-Downloaded models live in the HuggingFace cache, not in the repo. To see what’s there and how much space it uses:
-
-```bash
-hf cache scan
-```
-
-(This replaces the deprecated `huggingface-cli scan-cache`.)
-
-This lists each cached repo (e.g. `models--google--medgemma-4b-it`, `models--google--medgemma-27b-text-it`) and their size. You can then remove specific cached models via the Hub CLI if you need to free space; see [HuggingFace cache docs](https://huggingface.co/docs/huggingface_hub/guides/manage-cache).
-
-**If the scan shows 0 repos:** The app uses `HF_CACHE_DIR` (default `~/.cache/huggingface`). The Hub CLI uses `HF_HOME` for its default. To scan the same location the app uses, run:
-
-```bash
-HF_HOME=~/.cache/huggingface hf cache scan
-```
-
-or, if you set a custom cache when running the app: `HF_HOME=/path/you/used hf cache scan`. Also, if a download was interrupted or never completed, the cache may be empty or partial; run the app again with `MODE=model` and let the download finish, then scan again.
 
 ## Agentic Architecture
 
-med-EVE uses MedGemma at **6 key decision points**:
+MedGemma-enabled agents available in this repo:
 
-1. **Context Selection Agent**: Identifies patterns for complex cases (>3 markers)
-2. **Evidence Weighting Agent**: Dynamic weighting for rare/conflicting evidence
-3. **Hypothesis Generation Agent**: Core reasoning (always uses model)
-4. **Test Recommendation Agent**: Prioritized recommendations when ambiguity exists
-5. **Action Generation Agent**: Context-aware patient actions (always uses model)
-6. **Guardrail Explanation Agent**: Educational explanations when guardrails fail
+1. `context_selection` (flag-gated)
+2. `evidence_weighting` (flag-gated)
+3. `hypothesis_generation` (flag-gated full JSON path)
+4. `test_recommendation` (flag-gated)
+5. `action_generation` (flag-gated)
+6. `guardrail_explanation` (flag-gated)
+7. `novel_insight` (flag-gated)
+8. Hybrid ranking/reasoning path in `REASON` (default in model mode)
+9. MedGemma critic in `CRITIC`
+10. Case impression generator in `CASE_IMPRESSION`
 
-Each agent decides when to use the model vs. rule-based fallback, creating a truly agentic system.
-
-**Model Usage**: 4-6 model calls per complex case, each adding unique clinical insight.
+This flag-gated design is intentional: it supports controlled latency/safety trade-offs and clean ablation.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed pipeline flow and agent descriptions.
 
 ## Submission Documentation
 
-See [docs/SUBMISSION.md](docs/SUBMISSION.md) for:
-- Problem statement
-- Agentic model architecture (6 integration points)
-- Safety approach (guardrails with explanations)
-- Reproducibility instructions
-- Evaluation summary with metrics
+See [docs/SUBMISSION.md](docs/SUBMISSION.md) for the full technical submission with detailed methodology, evaluation results, and prize positioning.
+
+Additional docs:
+- [docs/EXECUTIVE_SUMMARY.md](docs/EXECUTIVE_SUMMARY.md)
+- [docs/REPRODUCIBILITY_CHECKLIST.md](docs/REPRODUCIBILITY_CHECKLIST.md)
+- [docs/ABLATIONS.md](docs/ABLATIONS.md)
 
 ## API Endpoints
 
@@ -249,13 +217,40 @@ See [docs/SUBMISSION.md](docs/SUBMISSION.md) for:
 
 ## Evaluation
 
-Run evaluation on all test cases:
+### Safety verification suite (model mode, 50 cases, seed 42)
+
+The evaluation suite verifies internal consistency and safety architecture across 50 deterministic test variants (8 base clinical scenarios with bounded numeric jitter). This is safety verification — not clinical validation. See [docs/SUBMISSION.md](docs/SUBMISSION.md) for full methodology.
+
+| Metric | Model mode | Lite mode | Purpose |
+|--------|-----------|-----------|---------|
+| Signal detection rate | 100% | 100% | KG backbone correctness |
+| Critic intervention rate | 100% | n/a | MedGemma safety review |
+| Guardrail false-positive rate | **0%** | 0% | Safety precision |
+| Schema valid rate | 100% | 100% | Contract compliance |
+| Avg model calls / case | 4.7 | 0 | Multi-point integration |
+| Avg agent decisions / case | 4.9 | 3 | Agentic routing |
+
+MedGemma adds value through confidence re-calibration, clinical reasoning prose, autonomous critic review, and contextual case impressions — not through pattern detection (which is deterministic by design).
+
+Full results: `backend/evals/results/golden_*.md`
+
+### Commands
+
 ```bash
-cd backend
-PYTHONPATH=. python evals/run_evals.py
+# Full model-mode verification (50 cases, ~3h on CPU)
+MODE=model REPRODUCIBILITY_SEED=42 make evals
+
+# Quick smoke test (1 case, ~5 min)
+make evals-model-smoke
+
+# Lite-mode verification (instant, no model)
+make evals
+
+# Internal ablations
+make ablations
 ```
 
-**Results**: 8/8 cases pass guardrail checks (gotcha case correctly triggers and patches unsafe actions).
+Evaluation/ablation outputs are generated under `backend/evals/results/` as JSON/CSV/Markdown artifacts.
 
 ## License
 

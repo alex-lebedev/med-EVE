@@ -1,0 +1,17 @@
+# Pinned baseline environment for reproducible local runs.
+# Update this file intentionally when upgrading dependency stack.
+
+fastapi==0.104.0
+uvicorn[standard]==0.24.0
+pydantic==2.4.2
+pyyaml==6.0
+pytest==7.4.0
+numpy==2.0.2
+torch==2.8.0
+transformers==4.57.6
+huggingface_hub==0.36.2
+sentencepiece==0.2.0
+# bitsandbytes is only supported reliably on Linux/CUDA.
+bitsandbytes==0.41.0; platform_system=="Linux"
+accelerate==0.21.0
+importlib-metadata==6.8.0

@@ -1,0 +1,81 @@
+{
+  "description": "Deterministic golden-case expansion manifest. Cases are derived from base synthetic cases with bounded numeric jitter.",
+  "notes": [
+    "At least 10 adversarial guardrail-triggering cases are included via anemia_of_inflammation_gotcha profile.",
+    "Expected outputs include target pattern IDs and guardrail trigger expectations."
+  ],
+  "profiles": [
+    {
+      "source_case_id": "case_01_iron_deficiency_anemia",
+      "count": 6,
+      "jitter_sequence_pct": [0.0, 0.01, 0.02, 0.015],
+      "expectations": {
+        "target_patterns": ["p_iron_def"],
+        "expect_guardrail_fail": false
+      }
+    },
+    {
+      "source_case_id": "case_02_anemia_of_inflammation_gotcha",
+      "count": 12,
+      "jitter_sequence_pct": [0.0, 0.01, 0.02, 0.025, 0.015],
+      "expectations": {
+        "target_patterns": ["p_inflam_iron_seq"],
+        "expect_guardrail_fail": false
+      }
+    },
+    {
+      "source_case_id": "case_03_subclinical_hypothyroid_dyslipidemia",
+      "count": 6,
+      "jitter_sequence_pct": [0.0, 0.01, 0.02, 0.015],
+      "expectations": {
+        "target_patterns": ["p_hypothyroid"],
+        "expect_guardrail_fail": false
+      }
+    },
+    {
+      "source_case_id": "case_04_primary_hypothyroid",
+      "count": 6,
+      "jitter_sequence_pct": [0.0, 0.01, 0.02, 0.015],
+      "expectations": {
+        "target_patterns": ["p_hypothyroid"],
+        "expect_guardrail_fail": false
+      }
+    },
+    {
+      "source_case_id": "case_05_healthy_control",
+      "count": 5,
+      "jitter_sequence_pct": [0.0, 0.01, 0.015],
+      "expectations": {
+        "target_patterns": [],
+        "expect_guardrail_fail": false
+      }
+    },
+    {
+      "source_case_id": "case_06_unit_mismatch_missing_units",
+      "count": 5,
+      "jitter_sequence_pct": [0.0, 0.01, 0.015],
+      "expectations": {
+        "target_patterns": ["p_iron_def", "p_inflam_iron_seq"],
+        "expect_guardrail_fail": false
+      }
+    },
+    {
+      "source_case_id": "case_07_borderline_values_trend",
+      "count": 5,
+      "jitter_sequence_pct": [0.0, 0.01, 0.015],
+      "expectations": {
+        "target_patterns": ["p_iron_def", "p_hypothyroid"],
+        "expect_guardrail_fail": false
+      }
+    },
+    {
+      "source_case_id": "case_08_conflicting_markers_insufficient_data",
+      "count": 5,
+      "jitter_sequence_pct": [0.0, 0.01, 0.015],
+      "expectations": {
+        "target_patterns": ["p_iron_def", "p_inflam_iron_seq"],
+        "expect_guardrail_fail": false
+      }
+    }
+  ]
+}

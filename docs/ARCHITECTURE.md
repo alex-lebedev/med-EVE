@@ -2,170 +2,98 @@
 
 ## Overview
 
-This document describes the current architecture of the med-EVE (Evidence Vector Engine) medical reasoning pipeline, focusing on the `/run` endpoint pipeline flow, response schema, event system, and MedGemma integration.
+This document describes the current architecture of the med-EVE pipeline as implemented in `backend/app.py`.
 
-## Pipeline Flow (`backend/app.py:/run`)
+## Pipeline Flow (`/run`, `/analyze`)
 
-The `/run` endpoint implements a 5-stage medical reasoning pipeline:
+1. **LAB_NORMALIZE**
+   - Module: `backend/core/lab_normalizer.py`
+   - Normalizes marker names, units, and statuses.
 
-### 1. LAB_NORMALIZE
-- **Module**: `backend/core/lab_normalizer.py`
-- **Input**: Raw lab results from case data (`case['labs']`)
-- **Process**:
-  - Normalizes marker names (e.g., "Thyrotropin" → "TSH")
-  - Converts units to standard units (e.g., Ferritin: ug/L → ng/mL)
-  - Determines status: `LOW`, `NORMAL`, or `HIGH` based on reference ranges
-- **Output**: List of normalized lab objects with `marker`, `value`, `unit`, `ref_low`, `ref_high`, `status`, `timestamp`
-- **Events**: `STEP_START`, `STEP_END`
+2. **CONTEXT_SELECT**
+   - Module: `backend/core/context_selector.py`
+   - Builds `case_card` and KG subgraph from abnormal markers.
+   - May add dynamic graph expansions via `backend/core/dynamic_graph.py`.
+   - Symptom mapping via `backend/core/symptom_mapper.py`.
 
-### 2. CONTEXT_SELECT
-- **Module**: `backend/core/context_selector.py`
-- **Input**: Normalized labs, patient context
-- **Process**:
-  - Extracts abnormal markers (status != 'NORMAL')
-  - Maps markers to knowledge graph node IDs via `marker_to_node.yml`
-  - **Agentic Decision**: Uses **Context Selection Agent** (MedGemma) if:
-    - >3 abnormal markers (complex case)
-    - Unusual marker combinations
-    - Patient has comorbidities
-  - Rule-based fallback for simple cases
-  - Identifies pattern signals (e.g., `p_iron_def`, `p_hypothyroid`, `p_inflam_iron_seq`)
-  - Builds a `CaseCard` with abnormal markers, signals, and patient context
-  - Retrieves subgraph from knowledge graph (2-hop neighbors, max 60 nodes)
-- **Output**: `CaseCard` dict and `subgraph` dict (nodes + edges)
-- **Events**: `STEP_START`, `AGENT_DECISION`, `MODEL_CALLED` (if model used), `HIGHLIGHT`, `STEP_END`
+3. **EVIDENCE_SCORE**
+   - Module: `backend/core/evidence_builder.py`
+   - Produces supports/contradictions, candidate pattern scores, and top discriminators.
 
-### 3. EVIDENCE_SCORE
-- **Module**: `backend/core/evidence_builder.py`
-- **Input**: CaseCard, subgraph, normalized labs
-- **Process**:
-  - Initializes candidate pattern scores (baseline 0.5)
-  - For each abnormal marker, finds edges connecting to pattern nodes
-  - **Agentic Decision**: Uses **Evidence Weighting Agent** (MedGemma) for:
-    - Rare marker/status combinations
-    - Conflicting evidence
-    - High-stakes decisions
-  - Rule-based weights used for standard cases
-  - Applies weighted scoring:
-    - `SUPPORTS` relation: adds weight to pattern score
-    - `CONTRADICTS` relation: subtracts weight from pattern score
-  - Normalizes scores to [0, 1] range
-  - Identifies top 5 discriminators by weight
-- **Output**: `EvidenceBundle` dict with `subgraph`, `supports`, `contradictions`, `candidate_scores`, `top_discriminators`
-- **Events**: `STEP_START`, `CANDIDATES`, `EVIDENCE_APPLIED`, `MODEL_WEIGHT_ASSIGNED` (if model used), `SCORE_UPDATE`, `STEP_END`
+4. **REASON**
+   - Module: `backend/core/reasoner_medgemma.py`
+   - Lite mode: fully rule-based.
+   - Model mode (default behavior): hybrid path (rule-grounded hypotheses + model ranking/reasoning prose).
+   - Full JSON generation/actions/test recommendation/novel insight are **feature-flagged**.
 
-### 4. REASON
-- **Module**: `backend/core/reasoner_medgemma.py`
-- **Input**: CaseCard, EvidenceBundle
-- **Process**:
-  - **Lite Mode (Default)**:
-    - Rule-based hypothesis generation from candidate scores
-    - Generates multiple hypotheses for differential diagnosis
-    - Hardcoded patient actions
-  - **Model Mode (Hybrid by default)**:
-    - **Hybrid architecture**: KG-grounded reasoning with model-augmented ranking and explanations.
-    - Primary hypothesis list is **always** built via lite (rule-based) for reliable schema; MedGemma is then used only for:
-      - **Ranking**: Short prompt returns a line like `H1=0.8 H2=0.5`; confidences are updated in place.
-      - **Reasoning prose**: For top 1–2 hypotheses, a one-sentence “why is this condition most likely?” is generated and attached to `hypothesis.reasoning`.
-    - **Case impression** (after guardrails): Optional model call for 2–4 sentence summary; emits `MODEL_REASONING_START`/`MODEL_REASONING_END` for UI.
-    - **Optional agents** (gated by env, off by default): Full JSON hypothesis generation (`USE_HYPOTHESIS_GENERATION_MODEL`), action generation (`USE_ACTION_GENERATION_MODEL`), novel insight (`USE_NOVEL_INSIGHT_MODEL`).
-  - **Events**: `STEP_START`, `MODEL_REASONING_START`, `MODEL_REASONING_END`, `AGENT_DECISION`, `MODEL_CALLED`, `STEP_END`
-- **Output**: `ReasonerOutput` dict with `hypotheses` (each may have `reasoning`), `patient_actions`, `red_flags`
+5. **CRITIC**
+   - Module: `backend/core/critic_medgemma.py`
+   - MedGemma critic emits bounded patch operations (`remove_hypothesis`, `lower_confidence`, `remove_action`).
 
-### 5. GUARDRAILS
-- **Module**: `backend/core/guardrails.py`
-- **Input**: ReasonerOutput, CaseCard, normalized labs
-- **Process**:
-  - Checks rules defined in `backend/guardrails/guardrails.yml`:
-    - **GR_001**: Blocks iron supplementation under inflammation pattern
-    - **GR_003**: Removes dosing recommendations
-    - **GR_004**: Validates action buckets (tests, scheduling, questions for clinician, low-risk defaults)
-    - **GR_005**: Prevents invention of markers not in input
-  - **Guardrail Explanation Agent** (When Guardrails Fail):
-    - Uses MedGemma to generate educational explanations
-    - Explains why guardrail triggered and what the risk would be
-    - Suggests alternative safe actions
-    - Provides clinical background
-  - Generates patches (JSON Patch format) for failed rules
-  - Applies patches to `reasoner_output` (supports 'remove' operations)
-- **Output**: `GuardrailReport` dict with `status`, `failed_rules`, `patches`, `explanations` (model-generated)
-- **Events**: `STEP_START`, `GUARDRAIL_FAIL`, `MODEL_CALLED` (if explanations generated), `GUARDRAIL_PATCH_APPLIED`, `STEP_END`
+6. **GUARDRAILS**
+   - Module: `backend/core/guardrails.py`
+   - Rule checks from `backend/guardrails/guardrails.yml`:
+     - `GR_001` iron supplementation block under inflammation
+     - `GR_002` require antibody confirmation for Hashimoto mention
+     - `GR_003` no dosing recommendations
+     - `GR_004` enforce allowed action buckets
+     - `GR_005` no invented markers
+   - Produces patches and optional model-generated explanations.
 
-### Final Event
-- **Event**: `FINAL_READY` emitted at end of pipeline
+7. **CASE_IMPRESSION**
+   - Module: `backend/core/case_impression.py`
+   - Generates concise summary for clinician-facing output.
 
-## Response Schema for `/run`
+## Response Shape
 
-The `/run` endpoint returns a JSON object with the following structure:
+`/run` and `/analyze` return:
 
 ```python
 {
-    "normalized_labs": List[Lab],  # Normalized lab results
-    "case_card": CaseCard,         # Case summary with abnormal markers, signals
-    "evidence_bundle": EvidenceBundle,  # Evidence scoring results
-    "reasoner_output": ReasonerOutput,   # MedGemma reasoning output
-    "guardrail_report": GuardrailReport, # Guardrail validation results
-    "events": List[Event],         # Event stream for UI animation
-    "timings": dict                # Currently empty, reserved for timing data
+    "normalized_labs": list,
+    "case_card": dict,
+    "evidence_bundle": dict,
+    "reasoner_output": dict,
+    "critic_result": dict,
+    "guardrail_report": dict,
+    "case_impression": str,
+    "suggested_kg_additions": dict,
+    "unlinked_markers": list,
+    "unmappable_inputs": list,
+    "events": list,
+    "timings": dict,
+    "model_usage": dict
 }
 ```
 
-## Agentic Architecture
+## Agent Routing
 
-med-EVE uses MedGemma at **6 key decision points** throughout the pipeline, with agents deciding when to use the model vs. rule-based fallback:
+Agent routing lives in `backend/core/agent_manager.py`.
+Model usage is intentionally flag-gated to control latency and risk:
 
-### 1. Context Selection Agent
-- **When**: Complex cases (>3 markers, unusual combinations, comorbidities)
-- **Decision Logic**: `agent_manager.should_use_agent('context_selection', context)`
-- **Value**: Identifies patterns rule-based system might miss
+- Context selection, evidence weighting, full hypothesis generation, test recommendation, action generation, and guardrail explanation are opt-in via env flags.
+- Hybrid ranking/reasoning in `REASON`, critic in `CRITIC`, and case impression may run in model mode based on runtime/config.
 
-### 2. Evidence Weighting Agent
-- **When**: Rare marker/status combinations, conflicting evidence
-- **Decision Logic**: `agent_manager.should_use_agent('evidence_weighting', context)`
-- **Value**: Context-aware dynamic weighting
+## Events and Observability
 
-### 3. Hypothesis Generation Agent
-- **When**: Always (core reasoning step)
-- **Decision Logic**: Always uses model in model mode
-- **Value**: Multiple nuanced hypotheses with clinical reasoning
+`backend/core/events.py` emits structured events consumed by the frontend timeline:
 
-### 4. Test Recommendation Agent
-- **When**: Ambiguity exists (top 2 hypotheses within 0.15 confidence) or no tests recommended
-- **Decision Logic**: `agent_manager.should_use_agent('test_recommendation', context)`
-- **Value**: Prioritized, evidence-based test recommendations
+| Event type | Purpose |
+|-----------|---------|
+| `STEP_START` / `STEP_END` | Pipeline stage boundaries with timing |
+| `MODEL_CALLED` | Every MedGemma invocation with latency, cache status, and error tracking |
+| `AGENT_DECISION` | Every model-vs-rules routing decision with rationale |
+| `GUARDRAIL_FAIL` | Safety rule violations detected |
+| `GUARDRAIL_PATCH_APPLIED` | Before/after snapshots of patched output |
+| `MODEL_REASONING_START` / `END` | UI indicators for model inference in progress |
+| `MODEL_WEIGHT_ASSIGNED` | Model-assigned evidence weights with rationale |
+| `HIGHLIGHT` / `CANDIDATES` | KG node/edge highlights for graph visualization |
 
-### 5. Action Generation Agent
-- **When**: Always for action generation
-- **Decision Logic**: Always uses model in model mode
-- **Value**: Context-aware, patient-specific actions
+In default model mode, a typical case emits ~4.7 `MODEL_CALLED` events and ~4.9 `AGENT_DECISION` events, providing full auditability of every model interaction and routing choice.
 
-### 6. Guardrail Explanation Agent
-- **When**: When guardrail fails
-- **Decision Logic**: `agent_manager.should_use_agent('guardrail_explanation', context)`
-- **Value**: Educational explanations for clinicians
+## Session Endpoints
 
-### Agent Manager (`backend/core/agent_manager.py`)
+- `POST /session/start`
+- `POST /session/{id}/message`
 
-Unified interface for all agents:
-- `should_use_agent(agent_type, context)` - Decision logic
-- `call_agent(agent_type, context, data, events_list, step)` - Model calling wrapper
-- Automatic fallback to rule-based when model unavailable
-- Event emission for all agent decisions and model calls
-
-## Knowledge Graph
-
-- **Storage**: JSON file at `backend/kg/graph.json`
-- **Access**: Via `KGStore` class in `backend/core/kg_store.py`
-- **Structure**: Nodes (markers, patterns, conditions, tests) and edges (relations: SUPPORTS, CONTRADICTS, CAUSES, RECOMMENDS_TEST, etc.)
-- **Subgraph Extraction**: 2-hop neighbors from abnormal marker nodes, max 60 nodes
-- **Determinism**: Nodes and edges sorted for consistent ordering
-
-## Dependencies
-
-- **FastAPI**: Web framework
-- **Pydantic**: Schema validation
-- **PyYAML**: Configuration files
-- **torch**: For MedGemma model loading
-- **transformers**: For MedGemma model
-- **huggingface_hub**: For model access
-- **bitsandbytes**: Optional, for quantization
+Sessions support update turns and explanation turns while preserving in-memory context.

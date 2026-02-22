@@ -1,7 +1,7 @@
 #!/bin/bash
-# Quick setup script for med-EVE (Evidence Vector Engine) Demo
+# Setup script for med-EVE (Evidence Vector Engine) Demo
 
-set -e  # Exit on error
+set -euo pipefail
 
 echo "🚀 Setting up med-EVE (Evidence Vector Engine) Demo..."
 echo ""
@@ -37,7 +37,34 @@ pip install --upgrade pip --quiet
 # Install dependencies
 echo ""
 echo "📥 Installing dependencies..."
-pip install -r requirements.txt
+REQ_FILE="requirements.txt"
+if [ "${USE_PINNED_REQUIREMENTS:-1}" = "1" ] && [ -f "requirements-pinned.txt" ]; then
+    REQ_FILE="requirements-pinned.txt"
+fi
+echo "Using dependency file: ${REQ_FILE}"
+pip install -r "${REQ_FILE}"
+
+# bitsandbytes is not stable on macOS and can crash interpreter imports.
+if [ "$(uname -s)" = "Darwin" ]; then
+    pip uninstall -y bitsandbytes >/dev/null 2>&1 || true
+fi
+
+echo ""
+echo "🧪 Verifying key commands..."
+if ! python -m uvicorn --version >/dev/null 2>&1; then
+    echo "❌ uvicorn unavailable after install"
+    exit 1
+fi
+if ! python -m pytest --version >/dev/null 2>&1; then
+    echo "❌ pytest unavailable after install"
+    exit 1
+fi
+if ! python -c "import transformers, accelerate, huggingface_hub; print(transformers.__version__, accelerate.__version__, huggingface_hub.__version__)" >/dev/null 2>&1; then
+    echo "❌ Model stack import check failed (transformers/accelerate/huggingface_hub)"
+    echo "   Try: pip install --force-reinstall -r ${REQ_FILE}"
+    exit 1
+fi
+echo "✅ Core runtime tools available"
 
 echo ""
 echo "✅ Setup complete!"

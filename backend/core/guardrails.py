@@ -11,6 +11,13 @@ with open(os.path.join(os.path.dirname(__file__), '..', 'guardrails', 'guardrail
 ALLOWED_BUCKETS = [
     "tests", "scheduling", "questions for clinician", "low-risk defaults"
 ]
+_RULE_MSG = {r.get("id"): r.get("message", "") for r in GUARDRAILS if r.get("id")}
+ANTIBODY_KEYWORDS = ("tpo", "antibody", "antibodies", "tpoab", "anti-tpo")
+
+
+def _rule_message(rule_id: str, fallback: str) -> str:
+    """Read rule message from YAML when available."""
+    return _RULE_MSG.get(rule_id, fallback)
 
 
 def _task_in_allowed_buckets(task_lower: str) -> bool:
@@ -31,24 +38,74 @@ def _apply_action_guardrails(actions, inflammation_pattern, failed_rules, patche
         if "iron" in task_lower and "supplement" in task_lower and inflammation_pattern:
             failed_rules.append({
                 "id": "GR_001",
-                "message": "Iron supplementation blocked under inflammation pattern.",
+                "message": _rule_message("GR_001", "Iron supplementation blocked under inflammation pattern."),
                 "scope": scope
             })
             patches.append({"op": "remove", "path": f"/{scope}/{i}"})
         if any(word in task_lower for word in ["mg", "dose", "supplement"]):
             failed_rules.append({
                 "id": "GR_003",
-                "message": "No dosing recommendations allowed.",
+                "message": _rule_message("GR_003", "No dosing recommendations allowed."),
                 "scope": scope
             })
             patches.append({"op": "remove", "path": f"/{scope}/{i}"})
         if not _task_in_allowed_buckets(task_lower):
             failed_rules.append({
                 "id": "GR_004",
-                "message": f"Action '{action.get('task', '')}' not in allowed buckets.",
+                "message": _rule_message("GR_004", f"Action '{action.get('task', '')}' not in allowed buckets."),
                 "scope": scope
             })
             patches.append({"op": "remove", "path": f"/{scope}/{i}"})
+
+
+def _contains_antibody_language(text: str) -> bool:
+    lower = (text or "").lower()
+    return any(k in lower for k in ANTIBODY_KEYWORDS)
+
+
+def _has_antibody_confirmation(normalized_labs) -> bool:
+    """True if input labs already include thyroid antibody markers."""
+    for lab in normalized_labs:
+        marker = (lab.get("marker") or "").lower()
+        if _contains_antibody_language(marker):
+            return True
+    return False
+
+
+def _has_antibody_recommendation(reasoner_output: dict) -> bool:
+    """True if existing recommendations already include thyroid antibody testing."""
+    for hypo in reasoner_output.get("hypotheses", []):
+        for test in hypo.get("next_tests", []) or []:
+            if _contains_antibody_language(test.get("label", "")) or _contains_antibody_language(test.get("test_id", "")):
+                return True
+    for action in reasoner_output.get("patient_actions", []) + reasoner_output.get("novel_actions", []):
+        if _contains_antibody_language(action.get("task", "")):
+            return True
+    return False
+
+
+def _apply_hashimoto_confirmation_guardrail(reasoner_output, normalized_labs, failed_rules, patches):
+    """GR_002: if Hashimoto is mentioned, require antibody confirmation recommendation."""
+    has_antibodies = _has_antibody_confirmation(normalized_labs)
+    has_recommendation = _has_antibody_recommendation(reasoner_output)
+    if has_antibodies or has_recommendation:
+        return
+
+    for h_idx, hypo in enumerate(reasoner_output.get("hypotheses", [])):
+        if "hashimoto" in (hypo.get("name") or "").lower():
+            failed_rules.append({
+                "id": "GR_002",
+                "message": _rule_message("GR_002", "Hashimoto requires antibody confirmation.")
+            })
+            patches.append({
+                "op": "add",
+                "path": f"/hypotheses/{h_idx}/next_tests/-",
+                "value": {
+                    "test_id": "t_tpo_ab",
+                    "label": "Thyroid peroxidase antibodies (TPOAb)"
+                }
+            })
+            break
 
 def check_guardrails(reasoner_output, case_card, normalized_labs, events_list=None):
     failed_rules = []
@@ -60,6 +117,7 @@ def check_guardrails(reasoner_output, case_card, normalized_labs, events_list=No
     novel_actions = reasoner_output.get('novel_actions', [])
     _apply_action_guardrails(patient_actions, inflammation_pattern, failed_rules, patches, "patient_actions")
     _apply_action_guardrails(novel_actions, inflammation_pattern, failed_rules, patches, "novel_actions")
+    _apply_hashimoto_confirmation_guardrail(reasoner_output, normalized_labs, failed_rules, patches)
 
     # GR_005: No invention
     all_markers = [lab['marker'] for lab in normalized_labs]
@@ -68,7 +126,10 @@ def check_guardrails(reasoner_output, case_card, normalized_labs, events_list=No
         evidence = hypo.get('evidence', [])
         for e_idx, ev in enumerate(evidence):
             if ev['marker'] not in all_markers:
-                failed_rules.append({"id": "GR_005", "message": f"Marker '{ev['marker']}' not in input."})
+                failed_rules.append({
+                    "id": "GR_005",
+                    "message": _rule_message("GR_005", f"Marker '{ev['marker']}' not in input.")
+                })
                 patches.append({"op": "remove", "path": f"/hypotheses/{h_idx}/evidence/{e_idx}"})
 
     status = "FAIL" if failed_rules else "PASS"

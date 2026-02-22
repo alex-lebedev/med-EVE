@@ -1,4 +1,4 @@
-.PHONY: verify test evals help run demo stop model-demo model-test hypothesis-test optimize-experiment
+.PHONY: setup verify test evals evals-model-smoke ablations help run demo stop model-demo model-test hypothesis-test optimize-experiment reproduce
 
 # Prefer venv/.venv python so "make demo" works without activating; fallback to python3 (macOS).
 # Use absolute path so "make run" / "make demo" work after "cd backend".
@@ -8,9 +8,13 @@ PYTHON := $(shell if [ -f "$(ROOT_DIR)/venv/bin/python" ]; then echo "$(ROOT_DIR
 # Default target
 help:
 	@echo "Available targets:"
+	@echo "  setup   - Create venv and install dependencies"
 	@echo "  verify  - Run pytest and evals (default)"
 	@echo "  test    - Run pytest tests only"
 	@echo "  evals   - Run evaluation script only"
+	@echo "  evals-model-smoke - Quick model-mode smoke eval (1 case)"
+	@echo "  ablations - Run internal ablations (lite/hybrid/full-agent)"
+	@echo "  reproduce - Setup + evals with fixed seed"
 	@echo "  run     - Start backend server only"
 	@echo "  demo    - Start backend + frontend and open browser (auto-play gotcha case)"
 	@echo "  model-demo - Start demo with model enabled (MODE=model)"
@@ -23,6 +27,10 @@ help:
 verify: test evals
 	@echo "✓ Verification complete"
 
+# Bootstrap local environment
+setup:
+	@bash setup.sh
+
 # Run pytest tests
 test:
 	@echo "Running pytest tests..."
@@ -31,7 +39,15 @@ test:
 # Run evaluation script
 evals:
 	@echo "Running evals..."
-	@cd backend && export PYTHONPATH=$$(pwd) && $(PYTHON) evals/run_evals.py
+	@cd backend && export PYTHONPATH=$$(pwd) && export REPRODUCIBILITY_SEED=$${REPRODUCIBILITY_SEED:-42} && $(PYTHON) evals/run_evals.py --dataset golden
+
+evals-model-smoke:
+	@echo "Running model-mode smoke eval..."
+	@cd backend && export PYTHONPATH=$$(pwd) && export MODE=model && export REPRODUCIBILITY_SEED=$${REPRODUCIBILITY_SEED:-42} && $(PYTHON) evals/run_evals.py --dataset legacy --limit 1
+
+ablations:
+	@echo "Running internal ablations..."
+	@export REPRODUCIBILITY_SEED=$${REPRODUCIBILITY_SEED:-42} && $(PYTHON) scripts/run_ablations.py --dataset golden
 
 # Start backend server only
 run:
@@ -45,7 +61,7 @@ run:
 		echo "✓ MODE=$$MODE detected"; \
 	fi
 	@echo "Press Ctrl+C to stop"
-	@cd backend && export PYTHONPATH=$$(pwd) && $(PYTHON) -m uvicorn app:app --host 127.0.0.1 --port 8000
+	@cd backend && export PYTHONPATH=$$(pwd) && export REPRODUCIBILITY_SEED=$${REPRODUCIBILITY_SEED:-42} && $(PYTHON) -m uvicorn app:app --host 127.0.0.1 --port 8000
 
 # Start demo (backend + frontend + browser)
 demo:
@@ -72,7 +88,7 @@ demo:
 	else \
 		echo "✓ MODE=$$MODE detected - model will be enabled"; \
 	fi; \
-	cd $$ROOT_DIR/backend && export PYTHONPATH=$$ROOT_DIR/backend && export MODE=$$MODE && export USE_MPS=$$USE_MPS && export MEDGEMMA_DEVICE=$$MEDGEMMA_DEVICE && $$PY -m uvicorn app:app --host 127.0.0.1 --port 8000 > /tmp/backend.log 2>&1 & \
+	cd $$ROOT_DIR/backend && export PYTHONPATH=$$ROOT_DIR/backend && export MODE=$$MODE && export USE_MPS=$$USE_MPS && export MEDGEMMA_DEVICE=$$MEDGEMMA_DEVICE && export REPRODUCIBILITY_SEED=$${REPRODUCIBILITY_SEED:-42} && $$PY -m uvicorn app:app --host 127.0.0.1 --port 8000 > /tmp/backend.log 2>&1 & \
 	BACKEND_PID=$$!; \
 	echo "Backend starting (PID: $$BACKEND_PID)..."; \
 	sleep 4; \
@@ -124,6 +140,10 @@ hypothesis-test:
 # Run optimization experiment: baseline vs fast vs quality configs (requires MODE=model / loaded model)
 optimize-experiment:
 	@cd backend && export PYTHONPATH=$$(pwd) && export MODE=model && export USE_MPS=$$USE_MPS && export MEDGEMMA_DEVICE=$$MEDGEMMA_DEVICE && $(PYTHON) evals/run_optimization_experiment.py --experiment --cases case_02_anemia_of_inflammation_gotcha case_04_primary_hypothyroid
+
+reproduce:
+	@$(MAKE) setup
+	@REPRODUCIBILITY_SEED=$${REPRODUCIBILITY_SEED:-42} $(MAKE) evals
 
 # Start demo with model enabled
 model-demo:

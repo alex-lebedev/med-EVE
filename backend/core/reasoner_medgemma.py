@@ -1,7 +1,7 @@
 from .model_manager import model_manager
 from .agent_manager import agent_manager
 from .kg_store import kg_store
-from .events import Step, emit_event, EventType, model_reasoning_start, model_reasoning_end
+from .events import Step, emit_event, EventType, model_reasoning_start, model_reasoning_end, model_called, agent_decision
 import json
 import os
 import re
@@ -218,6 +218,7 @@ def _model_rank_hypotheses(hypotheses: list, lab_summary: str, events_list=None)
     top = hypotheses[:HYBRID_RANK_TOP_N]
     line = "Hypotheses: " + "; ".join(f"{h['id']}={h.get('name','')} (current {h.get('confidence',0):.2f})" for h in top)
     prompt = f"Given lab summary: {lab_summary[:200]}. Rank confidence 0-1 for each. Reply with one line only, e.g. H1=0.8 H2=0.5 H3=0.3.\n{line}\nYour line:"
+    t0 = time.perf_counter()
     try:
         resp = model_manager.generate(
             system_prompt="You are a clinical assistant. Reply with only a single line of the form H1=x H2=y etc with numbers between 0 and 1.",
@@ -226,6 +227,7 @@ def _model_rank_hypotheses(hypotheses: list, lab_summary: str, events_list=None)
             temperature=0.2,
             top_p=0.9,
         )
+        elapsed_ms = (time.perf_counter() - t0) * 1000
         text = (resp.get("text") or "").strip()
         ranking = _parse_ranking_line(text)
         if ranking:
@@ -233,15 +235,22 @@ def _model_rank_hypotheses(hypotheses: list, lab_summary: str, events_list=None)
                 hid = (h.get("id") or "").upper()
                 if hid in ranking:
                     h["confidence"] = ranking[hid]
-    except Exception:
-        pass
+        if events_list:
+            model_called(events_list, Step.REASON, "ranking", "ranking",
+                         response_time_ms=elapsed_ms, cached=resp.get("cached", False))
+    except Exception as e:
+        if events_list:
+            model_called(events_list, Step.REASON, "ranking", "ranking",
+                         status="error", error=str(e),
+                         response_time_ms=(time.perf_counter() - t0) * 1000)
 
 
-def _model_reasoning_for_hypothesis(condition_name: str, lab_summary: str) -> str:
+def _model_reasoning_for_hypothesis(condition_name: str, lab_summary: str, events_list=None) -> str:
     """One-sentence reason why condition is most likely. Returns empty string on failure."""
     if not model_manager.model_loaded:
         return ""
     prompt = f"Labs: {lab_summary[:150]}. In one sentence, why is {condition_name} most likely here? Reply with one sentence only."
+    t0 = time.perf_counter()
     try:
         resp = model_manager.generate(
             system_prompt="You are a clinical assistant. Reply with one short sentence only.",
@@ -250,11 +259,18 @@ def _model_reasoning_for_hypothesis(condition_name: str, lab_summary: str) -> st
             temperature=0.3,
             top_p=0.9,
         )
+        elapsed_ms = (time.perf_counter() - t0) * 1000
         text = (resp.get("text") or "").strip()
+        if events_list:
+            model_called(events_list, Step.REASON, "reasoning", "reasoning",
+                         response_time_ms=elapsed_ms, cached=resp.get("cached", False))
         if text and len(text) > 10:
             return text[:500]
-    except Exception:
-        pass
+    except Exception as e:
+        if events_list:
+            model_called(events_list, Step.REASON, "reasoning", "reasoning",
+                         status="error", error=str(e),
+                         response_time_ms=(time.perf_counter() - t0) * 1000)
     return ""
 
 
@@ -269,6 +285,9 @@ def reason(case_card, evidence_bundle, events_list=None):
     provenance = base_result.get("provenance") or {"kg_grounded": True, "notes": "Lite mode: KG-grounded reasoning only."}
 
     if model_manager.lite_mode:
+        if events_list:
+            agent_decision(events_list, Step.REASON, "hybrid_routing", "use_rules",
+                           "Lite mode active; using KG-only reasoning")
         return base_result
 
     # Model mode: hybrid = lite + model ranking + reasoning prose (default)
@@ -378,6 +397,9 @@ def reason(case_card, evidence_bundle, events_list=None):
         # Fall through to hybrid if JSON path failed
     # Hybrid: lite + model ranking + reasoning prose
     if model_manager.model_loaded and hypotheses:
+        if events_list:
+            agent_decision(events_list, Step.REASON, "hybrid_routing", "use_model",
+                           "Hybrid path: KG hypotheses + model ranking and reasoning prose")
         abnormal = case_card.get("abnormal_markers") or []
         lab_summary = "Abnormal: " + ", ".join(abnormal[:10]) if abnormal else "No abnormal markers"
         # Ranking
@@ -393,14 +415,19 @@ def reason(case_card, evidence_bundle, events_list=None):
             if events_list:
                 model_reasoning_start(events_list, Step.REASON, "MedGemma is explaining...")
             t1 = time.perf_counter()
-            reasoning_text = _model_reasoning_for_hypothesis(cond, lab_summary)
+            reasoning_text = _model_reasoning_for_hypothesis(cond, lab_summary, events_list)
             if events_list:
                 model_reasoning_end(events_list, Step.REASON, response_time_ms=(time.perf_counter() - t1) * 1000)
             if reasoning_text:
                 h["reasoning"] = reasoning_text
         provenance["notes"] = "Hybrid: KG-grounded reasoning with model-augmented ranking and explanations."
     # Optional action_generation (gated; default off)
-    if agent_manager.should_use_agent("action_generation", {"hypotheses": hypotheses, "case_card": case_card}):
+    _action_use = agent_manager.should_use_agent("action_generation", {"hypotheses": hypotheses, "case_card": case_card})
+    if events_list:
+        agent_decision(events_list, Step.REASON, "action_generation",
+                       "use_model" if _action_use else "use_rules",
+                       "Action generation gated by env flag and case complexity")
+    if _action_use:
         try:
             action_data = {
                 "hypotheses_json": json.dumps(hypotheses, indent=2),
@@ -421,7 +448,12 @@ def reason(case_card, evidence_bundle, events_list=None):
         "support_count": len(evidence_bundle.get("supports", [])),
         "force_novelty": os.getenv("USE_NOVEL_INSIGHT_MODEL", "").strip().lower() == "force",
     }
-    if agent_manager.should_use_agent("novel_insight", novelty_context):
+    _novelty_use = agent_manager.should_use_agent("novel_insight", novelty_context)
+    if events_list:
+        agent_decision(events_list, Step.REASON, "novel_insight",
+                       "use_model" if _novelty_use else "use_rules",
+                       "Novel insight gated by env flag and case ambiguity")
+    if _novelty_use:
         try:
             novelty_data = {
                 "case_card_json": json.dumps(case_card, indent=2),

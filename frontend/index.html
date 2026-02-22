@@ -3,72 +3,148 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>med-EVE (Evidence Vector Engine) Demo - Medical AI Reasoning</title>
+    <title>med-EVE — Clinical Decision Support</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/cytoscape@3.23.0/dist/cytoscape.min.js"></script>
     <style>
+        :root {
+            --c-primary: #1a73e8;
+            --c-primary-dark: #1557b0;
+            --c-primary-light: #e8f0fe;
+            --c-surface: #ffffff;
+            --c-bg: #f1f3f4;
+            --c-border: #dadce0;
+            --c-border-light: #e8eaed;
+            --c-text: #202124;
+            --c-text-sec: #5f6368;
+            --c-text-ter: #80868b;
+            --c-success: #137333;
+            --c-success-bg: #e6f4ea;
+            --c-warning: #ea8600;
+            --c-warning-bg: #fef7e0;
+            --c-error: #c5221f;
+            --c-error-bg: #fce8e6;
+            --c-teal: #0d652d;
+            --shadow-xs: 0 1px 2px rgba(60,64,67,.1);
+            --shadow-sm: 0 1px 3px rgba(60,64,67,.12), 0 1px 2px rgba(60,64,67,.08);
+            --shadow-md: 0 2px 6px rgba(60,64,67,.15), 0 1px 4px rgba(60,64,67,.08);
+            --shadow-lg: 0 4px 12px rgba(60,64,67,.15), 0 2px 6px rgba(60,64,67,.08);
+            --r-sm: 4px;
+            --r-md: 8px;
+            --r-lg: 12px;
+            --r-pill: 100px;
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+        }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-family: var(--font);
             height: 100vh;
             display: flex;
             flex-direction: column;
-            background: #f5f5f5;
-            color: #333;
+            background: var(--c-bg);
+            color: var(--c-text);
             overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
         /* Header */
         #header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 12px 20px;
+            background: var(--c-surface);
+            color: var(--c-text);
+            padding: 0 24px;
+            height: 56px;
             display: flex;
             align-items: center;
-            gap: 15px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            gap: 16px;
+            border-bottom: 1px solid var(--c-border);
+            box-shadow: var(--shadow-xs);
+            z-index: 10;
         }
 
         #header h1 {
-            font-size: 20px;
+            font-size: 16px;
             font-weight: 600;
             margin-right: auto;
+            letter-spacing: -0.2px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--c-text);
         }
 
         #demo-mode-btn {
-            background: rgba(255,255,255,0.2);
-            color: white;
-            border: 1px solid rgba(255,255,255,0.3);
-            padding: 8px 16px;
-            border-radius: 6px;
+            background: var(--c-primary);
+            color: #fff;
+            border: none;
+            padding: 7px 16px;
+            border-radius: var(--r-sm);
             cursor: pointer;
+            font-family: var(--font);
             font-weight: 500;
-            transition: all 0.3s;
+            font-size: 13px;
+            transition: background .15s, box-shadow .15s;
         }
 
         #demo-mode-btn:hover {
-            background: rgba(255,255,255,0.3);
-            transform: translateY(-1px);
+            background: var(--c-primary-dark);
+            box-shadow: var(--shadow-sm);
         }
 
         #case-selector {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
         }
 
-        #case-selector select, #case-selector button {
-            padding: 6px 12px;
-            border: 1px solid rgba(255,255,255,0.3);
-            background: rgba(255,255,255,0.1);
-            color: white;
-            border-radius: 4px;
-            font-size: 14px;
+        #case-selector label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--c-text-sec);
+        }
+
+        #case-selector select {
+            padding: 6px 10px;
+            border: 1px solid var(--c-border);
+            background: var(--c-surface);
+            color: var(--c-text);
+            border-radius: var(--r-sm);
+            font-size: 13px;
+            font-family: var(--font);
+            outline: none;
+            transition: border-color .15s;
+        }
+
+        #case-selector select:focus {
+            border-color: var(--c-primary);
+        }
+
+        #case-selector button {
+            padding: 6px 14px;
+            border: 1px solid var(--c-border);
+            background: var(--c-surface);
+            color: var(--c-text);
+            border-radius: var(--r-sm);
+            font-size: 13px;
+            font-family: var(--font);
+            font-weight: 500;
+            cursor: pointer;
+            transition: background .15s, border-color .15s;
+        }
+
+        #case-selector button:hover {
+            background: var(--c-bg);
+            border-color: var(--c-primary);
         }
 
         #case-selector select option {
-            background: #667eea;
-            color: white;
+            background: var(--c-surface);
+            color: var(--c-text);
         }
 
         /* Model Status Indicator */
@@ -76,78 +152,83 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 6px 12px;
-            border-radius: 6px;
+            padding: 5px 12px;
+            border-radius: var(--r-pill);
             font-size: 12px;
             font-weight: 500;
-            background: rgba(255,255,255,0.15);
-            border: 1px solid rgba(255,255,255,0.2);
+            background: var(--c-bg);
+            border: 1px solid var(--c-border);
+            color: var(--c-text-sec);
+            transition: all .2s;
         }
 
         #model-status.active {
-            background: rgba(76, 175, 80, 0.3);
-            border-color: rgba(76, 175, 80, 0.5);
+            background: var(--c-success-bg);
+            border-color: #a8dab5;
+            color: var(--c-success);
         }
 
         #model-status.lite {
-            background: rgba(158, 158, 158, 0.2);
-            border-color: rgba(158, 158, 158, 0.3);
+            background: var(--c-bg);
+            border-color: var(--c-border);
+            color: var(--c-text-ter);
         }
 
         #model-status .status-dot {
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: #4CAF50;
+            background: var(--c-success);
         }
 
         #model-status.lite .status-dot {
-            background: #9E9E9E;
+            background: var(--c-text-ter);
         }
 
         #model-status.loading {
-            background: rgba(255, 193, 7, 0.25);
-            border-color: rgba(255, 193, 7, 0.5);
+            background: var(--c-warning-bg);
+            border-color: #f5deb3;
+            color: var(--c-warning);
         }
 
         #model-status.loading .status-dot {
-            background: #FFC107;
+            background: var(--c-warning);
             animation: model-status-pulse 1.2s ease-in-out infinite;
         }
 
         @keyframes model-status-pulse {
             0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.6; transform: scale(1.1); }
+            50% { opacity: 0.5; transform: scale(1.15); }
         }
 
         /* Timeline */
         #timeline {
-            background: white;
-            border-bottom: 2px solid #e0e0e0;
-            padding: 12px 20px;
+            background: var(--c-surface);
+            border-bottom: 1px solid var(--c-border);
+            padding: 10px 24px;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             overflow-x: auto;
-            min-height: 70px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            min-height: 56px;
         }
 
         .step-chip {
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 10px 18px;
-            border-radius: 25px;
-            background: #e8eaf6;
-            color: #5c6bc0;
-            font-size: 13px;
-            font-weight: 600;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: var(--r-pill);
+            background: var(--c-bg);
+            color: var(--c-text-sec);
+            font-size: 12px;
+            font-weight: 500;
             white-space: nowrap;
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all .25s ease;
             cursor: pointer;
             position: relative;
             overflow: hidden;
+            border: 1px solid transparent;
         }
 
         .step-chip::before {
@@ -157,7 +238,7 @@
             left: -100%;
             width: 100%;
             height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
             transition: left 0.5s;
         }
 
@@ -166,56 +247,59 @@
         }
 
         .step-chip.active {
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-            color: white;
-            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
-            transform: scale(1.05);
+            background: var(--c-primary);
+            color: #fff;
+            border-color: var(--c-primary);
+            box-shadow: 0 1px 4px rgba(26,115,232,.3);
         }
 
         .step-chip.completed {
-            background: linear-gradient(135deg, #81C784 0%, #66bb6a 100%);
-            color: white;
+            background: var(--c-success-bg);
+            color: var(--c-success);
+            border-color: #a8dab5;
         }
 
         .step-duration {
-            font-size: 11px;
-            opacity: 0.9;
-            margin-left: 4px;
+            font-size: 10px;
+            opacity: 0.8;
+            margin-left: 2px;
             font-weight: 400;
+            font-family: var(--mono);
         }
 
         /* Playback controls */
         #playback-controls {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             margin-left: auto;
-            padding-left: 20px;
-            border-left: 2px solid #e0e0e0;
+            padding-left: 16px;
+            border-left: 1px solid var(--c-border);
         }
 
         #playback-controls button {
-            padding: 8px 14px;
-            border: 2px solid #e0e0e0;
-            background: white;
-            border-radius: 6px;
+            padding: 6px 12px;
+            border: 1px solid var(--c-border);
+            background: var(--c-surface);
+            border-radius: var(--r-sm);
             cursor: pointer;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 500;
-            transition: all 0.2s;
+            font-family: var(--font);
+            color: var(--c-text-sec);
+            transition: all .15s;
         }
 
         #playback-controls button:hover {
-            background: #f5f5f5;
-            border-color: #667eea;
-            transform: translateY(-1px);
+            background: var(--c-bg);
+            border-color: var(--c-primary);
+            color: var(--c-primary);
         }
 
         #playback-controls button.active {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-color: #667eea;
-            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+            background: var(--c-primary);
+            color: #fff;
+            border-color: var(--c-primary);
         }
 
         /* Main layout */
@@ -227,93 +311,84 @@
 
         /* Left panel */
         #left {
-            width: 320px;
-            background: white;
-            border-right: 2px solid #e0e0e0;
+            width: 300px;
+            background: var(--c-surface);
+            border-right: 1px solid var(--c-border);
             display: flex;
             flex-direction: column;
             overflow-y: auto;
         }
 
         #left h3 {
-            padding: 16px;
-            border-bottom: 2px solid #e0e0e0;
-            font-size: 16px;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--c-border);
+            font-size: 13px;
             font-weight: 600;
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            color: #495057;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            color: var(--c-text-sec);
+            background: var(--c-surface);
         }
 
         #abnormal-labs {
-            padding: 12px;
+            padding: 12px 16px;
         }
 
         .lab-item {
-            padding: 14px;
-            margin-bottom: 10px;
-            border-radius: 10px;
-            border-left: 5px solid #ddd;
-            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            padding: 12px 14px;
+            margin-bottom: 8px;
+            border-radius: var(--r-md);
+            border-left: 3px solid var(--c-border);
+            background: var(--c-surface);
+            transition: all .25s ease;
+            box-shadow: var(--shadow-xs);
         }
 
         .lab-item.HIGH {
-            border-left-color: #f44336;
-            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+            border-left-color: var(--c-error);
+            background: var(--c-error-bg);
         }
 
         .lab-item.LOW {
-            border-left-color: #2196F3;
-            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border-left-color: var(--c-primary);
+            background: var(--c-primary-light);
         }
 
         .lab-item.unknown {
-            border-left-color: #9e9e9e;
-            background: linear-gradient(135deg, #f5f5f5 0%, #eeeeee 100%);
+            border-left-color: var(--c-text-ter);
+            background: var(--c-bg);
         }
 
         .lab-item.pulse {
             animation: pulseGlow 1.5s ease-in-out infinite;
-            box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
-            transform: scale(1.02);
+            box-shadow: 0 0 0 0 rgba(26,115,232,.5);
         }
 
         @keyframes pulseGlow {
-            0% { 
-                box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
-                transform: scale(1.02);
-            }
-            50% {
-                transform: scale(1.05);
-            }
-            70% { 
-                box-shadow: 0 0 0 15px rgba(76, 175, 80, 0);
-                transform: scale(1.02);
-            }
-            100% { 
-                box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
-                transform: scale(1.02);
-            }
+            0% { box-shadow: 0 0 0 0 rgba(26,115,232,.5); }
+            50% { box-shadow: 0 0 0 6px rgba(26,115,232,.15); }
+            100% { box-shadow: 0 0 0 0 rgba(26,115,232,0); }
         }
 
         .lab-item .marker-name {
-            font-weight: 700;
-            font-size: 15px;
-            margin-bottom: 6px;
-            color: #212529;
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+            color: var(--c-text);
         }
 
         .lab-item .lab-value {
-            font-size: 13px;
-            color: #6c757d;
+            font-size: 12px;
+            color: var(--c-text-sec);
+            font-family: var(--mono);
+            font-weight: 400;
         }
 
         /* Center - Graph */
         #center {
             flex: 1;
             position: relative;
-            background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
+            background: var(--c-bg);
             overflow: hidden;
         }
 
@@ -325,20 +400,20 @@
         /* Legend */
         #graph-legend {
             position: absolute;
-            top: 20px;
-            right: 20px;
-            background: white;
-            border-radius: 12px;
-            padding: 16px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+            top: 16px;
+            right: 16px;
+            background: var(--c-surface);
+            border-radius: var(--r-lg);
+            padding: 14px 16px;
+            box-shadow: var(--shadow-md);
             z-index: 100;
-            min-width: 220px;
-            border: 2px solid #e0e0e0;
-            transition: opacity 0.3s;
+            min-width: 200px;
+            border: 1px solid var(--c-border);
+            transition: opacity 0.2s;
         }
 
         #graph-legend.collapsed {
-            opacity: 0.3;
+            opacity: 0.4;
         }
 
         #graph-legend.collapsed:hover {
@@ -346,10 +421,12 @@
         }
 
         #graph-legend h4 {
-            font-size: 14px;
-            font-weight: 700;
-            margin-bottom: 12px;
-            color: #495057;
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--c-text-sec);
+            text-transform: uppercase;
+            letter-spacing: .5px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -358,12 +435,12 @@
         #graph-legend-toggle {
             cursor: pointer;
             font-size: 12px;
-            color: #667eea;
+            color: var(--c-primary);
             font-weight: 500;
         }
 
         .legend-section {
-            margin-bottom: 14px;
+            margin-bottom: 10px;
         }
 
         .legend-section:last-child {
@@ -371,20 +448,21 @@
         }
 
         .legend-section h5 {
-            font-size: 11px;
-            font-weight: 700;
-            color: #6c757d;
-            margin-bottom: 8px;
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--c-text-ter);
+            margin-bottom: 6px;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: .5px;
         }
 
         .legend-item {
             display: flex;
             align-items: center;
-            gap: 10px;
-            margin-bottom: 6px;
-            font-size: 12px;
+            gap: 8px;
+            margin-bottom: 4px;
+            font-size: 11px;
+            color: var(--c-text-sec);
         }
 
         .legend-item:last-child {
@@ -392,36 +470,36 @@
         }
 
         .legend-node {
-            width: 24px;
-            height: 24px;
-            border-radius: 6px;
+            width: 20px;
+            height: 20px;
+            border-radius: var(--r-sm);
             border: 2px solid;
             flex-shrink: 0;
         }
 
         .legend-node.marker {
-            background-color: #90CAF9;
-            border-color: #1976D2;
+            background-color: #a8c7fa;
+            border-color: #1a73e8;
         }
 
         .legend-node.pattern {
-            background-color: #A5D6A7;
-            border-color: #388E3C;
+            background-color: #a8dab5;
+            border-color: #137333;
         }
 
         .legend-node.condition {
-            background-color: #FFCC80;
-            border-color: #F57C00;
+            background-color: #fdd663;
+            border-color: #ea8600;
         }
 
         .legend-node.test {
-            background-color: #CE93D8;
-            border-color: #7B1FA2;
+            background-color: #d7aefb;
+            border-color: #7b1fa2;
         }
 
         .legend-edge {
-            width: 40px;
-            height: 3px;
+            width: 32px;
+            height: 2px;
             flex-shrink: 0;
             position: relative;
         }
@@ -429,70 +507,72 @@
         .legend-edge::after {
             content: '';
             position: absolute;
-            right: -6px;
+            right: -5px;
             top: -3px;
             width: 0;
             height: 0;
-            border-left: 6px solid;
+            border-left: 5px solid;
             border-top: 4px solid transparent;
             border-bottom: 4px solid transparent;
         }
 
         .legend-edge.supports {
-            background-color: #4CAF50;
+            background-color: #137333;
         }
 
         .legend-edge.supports::after {
-            border-left-color: #4CAF50;
+            border-left-color: #137333;
         }
 
         .legend-edge.contradicts {
-            background-color: #f44336;
+            background-color: #c5221f;
         }
 
         .legend-edge.contradicts::after {
-            border-left-color: #f44336;
+            border-left-color: #c5221f;
         }
 
         .legend-edge.recommends {
-            background-color: #FF9800;
+            background-color: #ea8600;
             border-style: dashed;
         }
 
         .legend-edge.recommends::after {
-            border-left-color: #FF9800;
+            border-left-color: #ea8600;
         }
 
         .legend-edge.causal {
-            background-color: #2196F3;
+            background-color: #1a73e8;
         }
 
         .legend-edge.causal::after {
-            border-left-color: #2196F3;
+            border-left-color: #1a73e8;
         }
 
         /* Agent Activity Panel */
         #agent-activity {
             position: absolute;
-            bottom: 20px;
-            right: 20px;
-            background: white;
-            border-radius: 12px;
-            padding: 16px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+            bottom: 16px;
+            right: 16px;
+            background: var(--c-surface);
+            border-radius: var(--r-lg);
+            padding: 14px 16px;
+            box-shadow: var(--shadow-md);
             z-index: 100;
-            min-width: 280px;
-            max-width: 400px;
-            max-height: 500px;
+            min-width: 260px;
+            max-width: 380px;
+            max-height: 400px;
             overflow-y: auto;
-            border: 2px solid #e0e0e0;
+            border: 1px solid var(--c-border);
         }
 
         #agent-activity h4 {
-            font-size: 14px;
-            font-weight: 700;
-            margin-bottom: 12px;
-            color: #495057;
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--c-text-sec);
+            text-transform: uppercase;
+            letter-spacing: .5px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -503,27 +583,27 @@
         }
 
         .agent-call-item {
-            padding: 10px;
-            margin-bottom: 8px;
-            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-            border-radius: 8px;
-            border-left: 4px solid #2196F3;
+            padding: 10px 12px;
+            margin-bottom: 6px;
+            background: var(--c-primary-light);
+            border-radius: var(--r-md);
+            border-left: 3px solid var(--c-primary);
         }
 
         .agent-call-item.rule-based {
-            background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
-            border-left-color: #9E9E9E;
+            background: var(--c-bg);
+            border-left-color: var(--c-text-ter);
         }
 
         .agent-call-item h6 {
             font-size: 12px;
-            font-weight: 700;
-            margin-bottom: 4px;
-            color: #1976D2;
+            font-weight: 600;
+            margin-bottom: 3px;
+            color: var(--c-primary-dark);
         }
 
         .agent-call-item.rule-based h6 {
-            color: #616161;
+            color: var(--c-text-sec);
         }
 
         .agent-call-item .agent-type {
@@ -533,18 +613,19 @@
 
         .agent-call-item .agent-time {
             font-size: 11px;
-            color: #6c757d;
-            margin-top: 4px;
+            color: var(--c-text-ter);
+            margin-top: 3px;
+            font-family: var(--mono);
         }
 
         .agent-call-item .agent-rationale {
             font-size: 11px;
-            color: #424242;
-            margin-top: 4px;
+            color: var(--c-text-sec);
+            margin-top: 3px;
             font-style: italic;
         }
 
-        /* Graph animation styles - will be applied via Cytoscape */
+        /* Graph animation styles */
         .node-highlight {
             animation: nodePulse 1.5s ease-in-out infinite;
         }
@@ -552,11 +633,11 @@
         @keyframes nodePulse {
             0%, 100% { 
                 transform: scale(1);
-                filter: drop-shadow(0 0 8px rgba(76, 175, 80, 0.8));
+                filter: drop-shadow(0 0 6px rgba(26,115,232,.6));
             }
             50% { 
-                transform: scale(1.15);
-                filter: drop-shadow(0 0 20px rgba(76, 175, 80, 1));
+                transform: scale(1.1);
+                filter: drop-shadow(0 0 14px rgba(26,115,232,.8));
             }
         }
 
@@ -565,87 +646,84 @@
         }
 
         @keyframes edgeFlow {
-            0% { 
-                opacity: 0.6;
-                stroke-width: 3px;
-            }
-            50% { 
-                opacity: 1;
-                stroke-width: 5px;
-            }
-            100% { 
-                opacity: 0.6;
-                stroke-width: 3px;
-            }
+            0%   { opacity: 0.6; stroke-width: 3px; }
+            50%  { opacity: 1;   stroke-width: 5px; }
+            100% { opacity: 0.6; stroke-width: 3px; }
         }
 
         /* Right panel */
         #right {
             width: 380px;
-            background: white;
-            border-left: 2px solid #e0e0e0;
+            background: var(--c-surface);
+            border-left: 1px solid var(--c-border);
             display: flex;
             flex-direction: column;
             overflow-y: auto;
         }
 
         .case-overview-card {
-            background: linear-gradient(135deg, #f0f4ff 0%, #e8ecf8 100%);
-            border: 1px solid #c5cae9;
-            border-radius: 10px;
+            background: var(--c-primary-light);
+            border: 1px solid #c5d9f7;
+            border-radius: var(--r-md);
             padding: 12px 14px;
             font-size: 13px;
-            line-height: 1.5;
-            color: #37474f;
+            line-height: 1.6;
+            color: var(--c-text);
         }
 
         .tab-buttons {
             display: flex;
-            border-bottom: 2px solid #e0e0e0;
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-bottom: 1px solid var(--c-border);
+            background: var(--c-surface);
         }
 
         .tab-button {
             flex: 1;
-            padding: 14px;
+            padding: 11px 8px;
             border: none;
             background: transparent;
             cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            color: #6c757d;
-            transition: all 0.3s;
+            font-size: 12px;
+            font-weight: 500;
+            font-family: var(--font);
+            color: var(--c-text-sec);
+            transition: all .2s;
             position: relative;
         }
 
         .tab-button::after {
             content: '';
             position: absolute;
-            bottom: 0;
+            bottom: -1px;
             left: 0;
             width: 0;
-            height: 3px;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            transition: width 0.3s;
+            height: 2px;
+            background: var(--c-primary);
+            transition: width .2s;
         }
 
         .tab-button.active {
-            background: white;
-            color: #667eea;
+            color: var(--c-primary);
+            font-weight: 600;
         }
 
         .tab-button.active::after {
             width: 100%;
         }
 
+        .tab-button:hover {
+            color: var(--c-primary);
+            background: var(--c-primary-light);
+        }
+
         .tab-content {
             display: none;
-            padding: 16px;
-            animation: fadeIn 0.3s;
+            padding: 16px 20px;
+            animation: fadeIn .2s;
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
+            from { opacity: 0; transform: translateY(4px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
@@ -653,167 +731,179 @@
             display: block;
         }
 
+        .tab-content h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--c-text-sec);
+            text-transform: uppercase;
+            letter-spacing: .3px;
+            margin-bottom: 12px;
+        }
+
         /* Hypothesis card */
         .hypothesis-card {
-            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-            border-radius: 12px;
-            padding: 18px;
-            margin-bottom: 14px;
-            border: 2px solid #e0e0e0;
-            transition: all 0.3s;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            background: var(--c-surface);
+            border-radius: var(--r-md);
+            padding: 16px;
+            margin-bottom: 12px;
+            border: 1px solid var(--c-border);
+            transition: box-shadow .2s, border-color .2s;
         }
 
         .hypothesis-card:hover {
-            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
-            transform: translateY(-2px);
+            box-shadow: var(--shadow-sm);
+            border-color: #c5d9f7;
         }
 
         .hypothesis-card h4 {
-            font-size: 16px;
-            font-weight: 700;
-            margin-bottom: 10px;
-            color: #212529;
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--c-text);
         }
 
         .hypothesis-card .confidence {
             display: inline-block;
-            padding: 6px 12px;
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-            color: white;
-            border-radius: 20px;
+            padding: 4px 10px;
+            background: var(--c-success);
+            color: #fff;
+            border-radius: var(--r-pill);
             font-size: 12px;
-            font-weight: 700;
-            box-shadow: 0 2px 6px rgba(76, 175, 80, 0.3);
+            font-weight: 600;
+            font-family: var(--mono);
         }
 
         .hypothesis-card .confidence.high-confidence {
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            background: var(--c-success);
         }
 
         .hypothesis-card .confidence.medium-confidence {
-            background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
-            box-shadow: 0 2px 6px rgba(255, 152, 0, 0.3);
+            background: var(--c-warning);
         }
 
         .hypothesis-card .confidence.low-confidence {
-            background: linear-gradient(135deg, #9E9E9E 0%, #757575 100%);
-            box-shadow: 0 2px 6px rgba(158, 158, 158, 0.3);
+            background: var(--c-text-ter);
         }
 
         .hypothesis-card .next-tests {
-            margin-top: 14px;
-            padding-top: 14px;
-            border-top: 2px solid #e0e0e0;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--c-border-light);
         }
 
         .hypothesis-card .next-tests h5 {
-            font-size: 13px;
-            font-weight: 700;
-            margin-bottom: 10px;
-            color: #495057;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--c-text-sec);
         }
 
         .hypothesis-card .next-tests ul {
             list-style: none;
-            font-size: 13px;
-            color: #6c757d;
+            font-size: 12px;
+            color: var(--c-text-sec);
         }
 
         .hypothesis-card .next-tests li {
-            padding: 6px 0;
-            padding-left: 20px;
+            padding: 4px 0;
+            padding-left: 18px;
             position: relative;
         }
 
         .hypothesis-card .next-tests li::before {
-            content: '→';
+            content: '\2192';
             position: absolute;
             left: 0;
-            color: #667eea;
-            font-weight: bold;
+            color: var(--c-primary);
+            font-weight: 600;
         }
 
         /* Patient action card */
         .action-card {
-            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-            border-radius: 10px;
-            padding: 14px;
-            margin-bottom: 10px;
-            border-left: 5px solid #2196F3;
-            transition: all 0.3s;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            background: var(--c-surface);
+            border-radius: var(--r-md);
+            padding: 12px 14px;
+            margin-bottom: 8px;
+            border-left: 3px solid var(--c-primary);
+            transition: box-shadow .2s;
+            border: 1px solid var(--c-border-light);
+            border-left: 3px solid var(--c-primary);
         }
 
         .action-card:hover {
-            transform: translateX(4px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            box-shadow: var(--shadow-sm);
         }
 
         .action-card .task {
-            font-weight: 700;
-            font-size: 14px;
-            margin-bottom: 6px;
-            color: #212529;
+            font-weight: 600;
+            font-size: 13px;
+            margin-bottom: 4px;
+            color: var(--c-text);
         }
 
         .action-card .why {
             font-size: 12px;
-            color: #6c757d;
-            margin-bottom: 8px;
+            color: var(--c-text-sec);
+            margin-bottom: 6px;
+            line-height: 1.5;
         }
 
         .action-card .risk {
             display: inline-block;
-            margin-top: 8px;
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 700;
+            margin-top: 6px;
+            padding: 2px 8px;
+            border-radius: var(--r-pill);
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .3px;
         }
 
         .action-card .risk.low {
-            background: linear-gradient(135deg, #c8e6c9 0%, #a5d6a7 100%);
-            color: #2e7d32;
+            background: var(--c-success-bg);
+            color: var(--c-success);
         }
 
         .action-card .risk.medium {
-            background: linear-gradient(135deg, #ffe082 0%, #ffcc02 100%);
-            color: #f57c00;
+            background: var(--c-warning-bg);
+            color: var(--c-warning);
         }
 
         .action-card .risk.high {
-            background: linear-gradient(135deg, #ffcdd2 0%, #ef9a9a 100%);
-            color: #c62828;
+            background: var(--c-error-bg);
+            color: var(--c-error);
         }
 
         /* Reasoning trace */
         #reasoning-trace {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 2px solid #e0e0e0;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--c-border);
         }
 
         #reasoning-trace-toggle {
             display: flex;
             align-items: center;
-            gap: 10px;
-            margin-bottom: 14px;
+            gap: 8px;
+            margin-bottom: 12px;
             cursor: pointer;
             user-select: none;
-            padding: 8px;
-            border-radius: 6px;
-            transition: background 0.2s;
+            padding: 6px 8px;
+            border-radius: var(--r-sm);
+            transition: background .15s;
+            font-size: 13px;
+            color: var(--c-text-sec);
         }
 
         #reasoning-trace-toggle:hover {
-            background: #f5f5f5;
+            background: var(--c-bg);
         }
 
         #reasoning-trace-toggle input {
             cursor: pointer;
-            width: 18px;
-            height: 18px;
+            width: 16px;
+            height: 16px;
+            accent-color: var(--c-primary);
         }
 
         #reasoning-trace-content {
@@ -824,210 +914,296 @@
 
         #reasoning-trace-content.active {
             display: block;
-            animation: fadeIn 0.3s;
+            animation: fadeIn .2s;
         }
 
         .evidence-item {
-            padding: 10px;
-            margin-bottom: 8px;
-            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 6px;
+            background: var(--c-bg);
+            border-radius: var(--r-md);
             font-size: 12px;
-            border-left: 4px solid #4CAF50;
-            transition: all 0.2s;
+            border-left: 3px solid var(--c-success);
+            transition: box-shadow .15s;
         }
 
         .evidence-item:hover {
-            transform: translateX(4px);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            box-shadow: var(--shadow-xs);
         }
 
         .evidence-item .edge-id {
-            font-family: 'Courier New', monospace;
-            color: #6c757d;
-            font-size: 11px;
-            margin-top: 4px;
+            font-family: var(--mono);
+            color: var(--c-text-ter);
+            font-size: 10px;
+            margin-top: 3px;
         }
 
         /* Trust Moments */
         #trust-moments {
             position: fixed;
-            top: 90px;
-            right: 20px;
-            width: 420px;
+            top: 70px;
+            right: 16px;
+            width: 400px;
             z-index: 1000;
             display: flex;
             flex-direction: column;
-            gap: 14px;
+            gap: 10px;
         }
 
         .trust-moment {
-            background: white;
-            border-radius: 12px;
-            padding: 18px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-            animation: slideInRight 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            border: 2px solid;
+            background: var(--c-surface);
+            border-radius: var(--r-lg);
+            padding: 16px;
+            box-shadow: var(--shadow-lg);
+            animation: slideInRight .3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid var(--c-border);
         }
 
         @keyframes slideInRight {
-            from {
-                transform: translateX(120%);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
+            from { transform: translateX(110%); opacity: 0; }
+            to   { transform: translateX(0);    opacity: 1; }
         }
 
         .guardrail-fail {
-            border-left: 6px solid #f44336;
-            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
-            border-color: #f44336;
+            border-left: 4px solid var(--c-error);
+            background: var(--c-error-bg);
+            border-color: var(--c-error);
         }
 
         .guardrail-fail h4 {
-            color: #c62828;
-            font-size: 15px;
-            font-weight: 700;
-            margin-bottom: 10px;
+            color: var(--c-error);
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
         }
 
         .guardrail-fail .rule-id {
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            color: #6c757d;
-            margin-bottom: 6px;
-            font-weight: 600;
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--c-text-sec);
+            margin-bottom: 4px;
+            font-weight: 500;
         }
 
         .guardrail-fail .message {
             font-size: 13px;
-            color: #212529;
+            color: var(--c-text);
             line-height: 1.5;
         }
 
         .patch-diff {
-            border-left: 6px solid #FF9800;
-            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
-            border-color: #FF9800;
+            border-left: 4px solid var(--c-warning);
+            background: var(--c-warning-bg);
+            border-color: var(--c-warning);
         }
 
         .patch-diff h4 {
-            color: #e65100;
-            font-size: 15px;
-            font-weight: 700;
-            margin-bottom: 14px;
+            color: #b06000;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
+        }
+
+        .trust-pill {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: .05em;
+            text-transform: uppercase;
+            padding: 3px 8px;
+            border-radius: var(--r-pill);
+            margin-bottom: 8px;
+        }
+
+        .trust-pill-danger {
+            background: var(--c-error);
+            color: #fff;
+        }
+
+        .trust-pill-warn {
+            background: var(--c-warning);
+            color: #fff;
         }
 
         .diff-section {
-            margin-bottom: 14px;
+            margin-bottom: 12px;
         }
 
         .diff-section h5 {
-            font-size: 12px;
-            font-weight: 700;
-            margin-bottom: 8px;
-            color: #6c757d;
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--c-text-sec);
+            text-transform: uppercase;
+            letter-spacing: .3px;
         }
 
         .diff-before, .diff-after {
-            padding: 10px;
-            border-radius: 6px;
+            padding: 8px 10px;
+            border-radius: var(--r-sm);
             font-size: 11px;
-            font-family: 'Courier New', monospace;
+            font-family: var(--mono);
             white-space: pre-wrap;
             word-break: break-all;
-            line-height: 1.4;
+            line-height: 1.5;
         }
 
         .diff-before {
-            background: linear-gradient(135deg, #ffcdd2 0%, #ef9a9a 100%);
-            color: #c62828;
-            margin-bottom: 6px;
-            border: 1px solid #ef9a9a;
+            background: var(--c-error-bg);
+            color: var(--c-error);
+            margin-bottom: 4px;
+            border: 1px solid #f5c6c4;
         }
 
         .diff-after {
-            background: linear-gradient(135deg, #c8e6c9 0%, #a5d6a7 100%);
-            color: #2e7d32;
-            border: 1px solid #a5d6a7;
+            background: var(--c-success-bg);
+            color: var(--c-success);
+            border: 1px solid #a8dab5;
         }
 
-        /* MedGemma reasoning indicator (shown during model calls, before graph loads) */
+        /* MedGemma reasoning indicator */
         #reasoning-banner {
             display: none;
             align-items: center;
-            gap: 12px;
-            padding: 10px 20px;
-            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-            border-bottom: 2px solid #2196F3;
-            font-size: 14px;
-            font-weight: 600;
-            color: #1565C0;
-            box-shadow: 0 2px 8px rgba(33, 150, 243, 0.2);
+            gap: 10px;
+            padding: 8px 24px;
+            background: var(--c-primary-light);
+            border-bottom: 1px solid #c5d9f7;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--c-primary-dark);
         }
         #reasoning-banner.visible {
             display: flex;
         }
         #reasoning-banner .reasoning-spinner {
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(33, 150, 243, 0.3);
-            border-top-color: #2196F3;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(26,115,232,.25);
+            border-top-color: var(--c-primary);
             border-radius: 50%;
-            animation: reasoning-spin 0.8s linear infinite;
+            animation: reasoning-spin .7s linear infinite;
         }
         @keyframes reasoning-spin {
             to { transform: rotate(360deg); }
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Utility classes for JS-generated content */
+        .panel-section {
+            padding: 12px 20px;
+            background: var(--c-surface);
+            border-bottom: 1px solid var(--c-border-light);
+        }
+        .panel-section-label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--c-text-sec);
+        }
+        .panel-hint {
+            font-size: 11px;
+            color: var(--c-text-ter);
+        }
+        .btn-primary {
+            padding: 7px 16px;
+            background: var(--c-primary);
+            color: #fff;
+            border: none;
+            border-radius: var(--r-sm);
+            cursor: pointer;
+            font-family: var(--font);
+            font-weight: 500;
+            font-size: 13px;
+            transition: background .15s;
+        }
+        .btn-primary:hover { background: var(--c-primary-dark); }
+        .btn-secondary {
+            padding: 7px 14px;
+            background: var(--c-surface);
+            color: var(--c-text);
+            border: 1px solid var(--c-border);
+            border-radius: var(--r-sm);
+            cursor: pointer;
+            font-family: var(--font);
+            font-weight: 500;
+            font-size: 13px;
+            transition: background .15s, border-color .15s;
+        }
+        .btn-secondary:hover { background: var(--c-bg); border-color: var(--c-primary); }
+        .input-field {
+            padding: 8px 12px;
+            border: 1px solid var(--c-border);
+            border-radius: var(--r-sm);
+            font-size: 13px;
+            font-family: var(--font);
+            color: var(--c-text);
+            resize: vertical;
+            outline: none;
+            transition: border-color .15s;
+            width: 100%;
+        }
+        .input-field:focus { border-color: var(--c-primary); }
+        .status-bar {
+            padding: 6px 24px;
+            background: var(--c-bg);
+            border-bottom: 1px solid var(--c-border-light);
+            font-size: 11px;
+            color: var(--c-text-ter);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            font-family: var(--mono);
         }
     </style>
 </head>
 <body>
     <!-- Header -->
     <div id="header">
-        <h1>🧬 med-EVE (Evidence Vector Engine) Medical AI</h1>
+        <h1><img src="logo.svg" alt="med-EVE" width="32" height="32" style="border-radius:8px; vertical-align:middle;"> med-EVE</h1>
         <div id="model-status" class="lite" title="Click to check model status">
             <span class="status-dot"></span>
             <span id="model-status-text">Lite Mode</span>
         </div>
-        <button id="demo-mode-btn" onclick="runDemoMode()">🎬 Demo Mode</button>
+        <button id="demo-mode-btn" onclick="runDemoMode()">Demo</button>
         <div id="case-selector">
-            <label for="case-select">Case:</label>
+            <label for="case-select">Case</label>
             <select id="case-select"></select>
             <button onclick="loadSelectedCase()">Load</button>
         </div>
     </div>
 
-    <!-- Analyze from text (MedGemma pipeline, same traces/graph as case load) -->
-    <div id="analyze-panel" style="background: #fff; border-bottom: 1px solid #e0e0e0; padding: 12px 20px;">
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-            <strong style="color: #5c6bc0;">Analyze from text</strong>
-            <span style="font-size: 12px; color: #6c757d;">Paste lab values (e.g. Ferritin 12 ng/mL, Hb 10.5 g/dL). Uses local MedGemma.</span>
+    <!-- Unified clinical input panel -->
+    <div id="analyze-panel" class="panel-section">
+        <div style="display: flex; gap: 8px; align-items: flex-start;">
+            <textarea id="analyze-text" class="input-field" placeholder="Lab values: Ferritin 12 ng/mL, Hb 10.5 g/dL  |  Question: Why is iron deficiency the top hypothesis?" rows="2" style="flex: 1; min-width: 200px;"></textarea>
         </div>
-        <div style="display: flex; gap: 10px; align-items: flex-start;">
-            <textarea id="analyze-text" placeholder="e.g. Ferritin 12 ng/mL, Hb 10.5 g/dL, MCV 75. TSH 2.6 mIU/L. Patient vegan, fatigue." rows="2" style="flex: 1; padding: 10px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 14px; resize: vertical; min-width: 200px;"></textarea>
-            <button id="analyze-btn" onclick="runFromText()" style="padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; white-space: nowrap;">Analyze</button>
+        <div style="display: flex; gap: 6px; margin-top: 8px; align-items: center; flex-wrap: wrap;">
+            <button id="analyze-btn" onclick="runFromTextNew()" class="btn-primary" title="Parse lab values and run a fresh analysis">Analyze New</button>
+            <button id="merge-btn" onclick="runFromTextMerge()" class="btn-secondary" disabled title="Add lab values to the current case and re-analyze">Add to Case</button>
+            <div style="width: 1px; height: 20px; background: var(--c-border); margin: 0 2px;"></div>
+            <button id="ask-btn" onclick="askAboutCase()" class="btn-secondary" disabled title="Ask a question about the current case (e.g. Explain why...)">Ask Question</button>
+            <span id="analyze-merge-hint" class="panel-hint" style="margin-left: auto;"></span>
         </div>
-        <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
-            <label style="font-size: 13px;"><input type="radio" name="analyze-mode" value="new" id="analyze-mode-new" checked> New case</label>
-            <label style="font-size: 13px;"><input type="radio" name="analyze-mode" value="merge" id="analyze-mode-merge"> Add/update to current case</label>
-            <span id="analyze-merge-hint" style="font-size: 11px; color: #999;">(no current case)</span>
-        </div>
+        <!-- Hidden elements to preserve JS compatibility -->
+        <input type="radio" name="analyze-mode" value="new" id="analyze-mode-new" checked style="display:none;">
+        <input type="radio" name="analyze-mode" value="merge" id="analyze-mode-merge" style="display:none;">
+        <span id="session-id-label" style="display:none;">none</span>
     </div>
 
-    <!-- Run status: current case and saved output path -->
-    <div id="run-status" style="padding: 8px 20px; background: #f8f9fa; border-bottom: 1px solid #e0e0e0; font-size: 12px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
-        <span>Current case: <span id="current-case-label">none</span></span>
-        <span>Saved to: <span id="output-path-label">—</span></span>
-        <button type="button" id="clear-current-case-btn" onclick="clearCurrentCase()" style="margin-left: auto; padding: 4px 10px; font-size: 11px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer;">Clear current case</button>
+    <!-- Run status -->
+    <div id="run-status" class="status-bar">
+        <span>Case: <span id="current-case-label">none</span></span>
+        <span>Output: <span id="output-path-label">—</span></span>
+        <button type="button" id="clear-current-case-btn" onclick="clearCurrentCase()" class="btn-secondary" style="margin-left: auto; padding: 2px 8px; font-size: 10px;">Clear</button>
     </div>
 
     <!-- MedGemma reasoning indicator (shown during model ranking/reasoning/impression, hidden when final) -->
@@ -1054,6 +1230,10 @@
             <span>Reason</span>
             <span class="step-duration" id="duration-REASON"></span>
         </div>
+        <div class="step-chip" data-step="CRITIC">
+            <span>Critic</span>
+            <span class="step-duration" id="duration-CRITIC"></span>
+        </div>
         <div class="step-chip" data-step="GUARDRAILS">
             <span>Guardrails</span>
             <span class="step-duration" id="duration-GUARDRAILS"></span>
@@ -1073,7 +1253,7 @@
     <div id="main">
         <!-- Left: Abnormal labs -->
         <div id="left">
-            <h3>Abnormal Labs</h3>
+            <h3>Abnormal Markers</h3>
             <div id="abnormal-labs"></div>
         </div>
 
@@ -1131,7 +1311,7 @@
             <div id="agent-activity" style="display: none;">
                 <h4>
                     <span>Agent Activity</span>
-                    <span id="agent-toggle" onclick="toggleAgentActivity()" style="cursor: pointer; color: #667eea;">−</span>
+                    <span id="agent-toggle" onclick="toggleAgentActivity()" style="cursor: pointer; color: var(--c-primary);">−</span>
                 </h4>
                 <div id="agent-content"></div>
             </div>
@@ -1139,20 +1319,21 @@
 
         <!-- Right: Tabs -->
         <div id="right">
-            <div id="case-overview-wrap" style="display: none; margin-bottom: 12px;">
-                <h3 style="font-size: 14px; color: #495057; margin-bottom: 8px;">Case overview</h3>
+            <div id="case-overview-wrap" style="display: none; padding: 16px 20px 0;">
+                <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--c-text-sec); margin-bottom: 8px;">Case Overview</div>
                 <div id="case-overview" class="case-overview-card"></div>
             </div>
-            <div id="unlinked-markers-wrap" style="display: none; margin-bottom: 12px;">
-                <div id="unlinked-markers-note" class="case-overview-card" style="border-color: #ffb74d; background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);"></div>
+            <div id="unlinked-markers-wrap" style="display: none; padding: 8px 20px 0;">
+                <div id="unlinked-markers-note" class="case-overview-card" style="border-color: #f5deb3; background: var(--c-warning-bg);"></div>
             </div>
-            <div id="unmappable-inputs-wrap" style="display: none; margin-bottom: 12px;">
-                <div id="unmappable-inputs-note" class="case-overview-card" style="border-color: #ef5350; background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);"></div>
+            <div id="unmappable-inputs-wrap" style="display: none; padding: 8px 20px 0;">
+                <div id="unmappable-inputs-note" class="case-overview-card" style="border-color: #f5c6c4; background: var(--c-error-bg);"></div>
             </div>
             <div class="tab-buttons">
                 <button class="tab-button active" onclick="showTab('clinician')">Clinician</button>
                 <button class="tab-button" onclick="showTab('patient')">Patient</button>
                 <button class="tab-button" onclick="showTab('guidance')">Guidance</button>
+                <button class="tab-button" onclick="showTab('explanation')">Explanation</button>
                 <button class="tab-button" onclick="showTab('next-steps')">Next Steps</button>
             </div>
             <div id="clinician" class="tab-content active">
@@ -1182,6 +1363,14 @@
                     </div>
                 </div>
             </div>
+            <div id="explanation" class="tab-content">
+                <h3>Explanation</h3>
+                <div id="explanation-content">
+                    <div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">
+                        Ask a follow-up question to see an explanation
+                    </div>
+                </div>
+            </div>
             <div id="next-steps" class="tab-content">
                 <h3>Recommended Next Steps</h3>
                 <div id="next-steps-content">
@@ -1207,6 +1396,7 @@
         let highlightedNodes = new Set();
         let highlightedEdges = new Set();
         let animationTimeouts = [];
+        let sessionId = null;
 
         const API_BASE = 'http://localhost:8000';
         let modelHealth = null;
@@ -1233,16 +1423,109 @@
         function updateAnalyzeMergeState() {
             const mergeRadio = document.getElementById('analyze-mode-merge');
             const hint = document.getElementById('analyze-merge-hint');
-            if (!mergeRadio || !hint) return;
+            const mergeBtn = document.getElementById('merge-btn');
+            const askBtn = document.getElementById('ask-btn');
+            if (!hint) return;
             if (lastCurrentCaseId) {
-                mergeRadio.disabled = false;
-                hint.textContent = '(merge with current)';
+                if (mergeRadio) mergeRadio.disabled = false;
+                if (mergeBtn) mergeBtn.disabled = false;
+                if (askBtn) askBtn.disabled = false;
+                hint.textContent = 'Active: ' + lastCurrentCaseId;
             } else {
-                mergeRadio.disabled = true;
-                if (document.getElementById('analyze-mode-merge')?.checked) {
-                    document.getElementById('analyze-mode-new').checked = true;
+                if (mergeRadio) {
+                    mergeRadio.disabled = true;
+                    if (mergeRadio.checked) {
+                        document.getElementById('analyze-mode-new').checked = true;
+                    }
                 }
-                hint.textContent = '(no current case)';
+                if (mergeBtn) mergeBtn.disabled = true;
+                if (askBtn) askBtn.disabled = true;
+                hint.textContent = '';
+            }
+        }
+
+        function runFromTextNew() {
+            document.getElementById('analyze-mode-new').checked = true;
+            runFromText(true);
+        }
+
+        function runFromTextMerge() {
+            document.getElementById('analyze-mode-merge').checked = true;
+            runFromText(true);
+        }
+
+        async function askAboutCase() {
+            const textarea = document.getElementById('analyze-text');
+            const text = (textarea && textarea.value) ? textarea.value.trim() : '';
+            if (!text) return;
+
+            if (!pipelineData || !pipelineData.normalized_labs || pipelineData.normalized_labs.length === 0) {
+                alert('Load or analyze a case first, then ask a question about it.');
+                return;
+            }
+
+            const askBtn = document.getElementById('ask-btn');
+            const explEl = document.getElementById('explanation-content');
+
+            // Show loading state immediately
+            if (askBtn) { askBtn.disabled = true; askBtn.textContent = 'Thinking…'; }
+            showTab('explanation');
+            if (explEl) explEl.innerHTML = `<div style="padding: 24px; text-align: center; color: var(--c-muted);">
+                <div style="display: inline-block; width: 20px; height: 20px; border: 2px solid var(--c-border); border-top-color: var(--c-primary); border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 8px;"></div>
+                <div style="font-size: 13px;">Processing your question…</div>
+            </div>`;
+
+            try {
+                // Auto-start session if needed
+                if (!sessionId) {
+                    const labs = pipelineData.normalized_labs;
+                    const labText = labs.map(l => `${l.marker} ${l.value} ${(l.unit || '').trim()}`).join(', ');
+                    const startRes = await fetch(`${API_BASE}/session/start`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text: labText })
+                    });
+                    if (!startRes.ok) {
+                        const err = await startRes.json().catch(() => ({}));
+                        throw new Error(err.detail || 'Failed to initialize session');
+                    }
+                    const startData = await startRes.json();
+                    updateSessionLabel(startData.session_id);
+                }
+
+                // Send the question
+                const res = await fetch(`${API_BASE}/session/${sessionId}/message`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text, intent: 'explanation' })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || res.statusText);
+                }
+                const data = await res.json();
+                if (data.turn_type === 'explanation') {
+                    if (explEl) explEl.innerHTML = `<div style="padding: 16px; font-size: 13px; line-height: 1.7;">
+                        <div style="font-size: 11px; color: var(--c-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Q: ${text}</div>
+                        <div>${data.explanation || 'No explanation available.'}</div>
+                    </div>`;
+                } else if (data.turn_type === 'update') {
+                    const output = data.output || {};
+                    pipelineData = output;
+                    events = output.events || [];
+                    renderInitial(output);
+                    updateCurrentCaseDisplay(output.current_case_id ?? output.case_id);
+                    updateOutputPathDisplay(output.output_path ?? null);
+                    if (explEl) explEl.innerHTML = `<div style="padding: 16px; font-size: 13px; color: var(--c-muted); text-align: center;">Case updated with new clinical info. See results in the Clinician tab.</div>`;
+                } else {
+                    if (explEl) explEl.innerHTML = `<div style="padding: 16px; font-size: 13px; color: var(--c-muted); text-align: center;">${data.message || 'No response. Try a specific question like "Why is iron deficiency the top hypothesis?"'}</div>`;
+                }
+            } catch (e) {
+                console.error('Ask failed:', e);
+                if (explEl) explEl.innerHTML = `<div style="padding: 16px; font-size: 13px; color: #c62828; text-align: center;">Error: ${e.message || 'Request failed'}</div>`;
+            } finally {
+                if (askBtn) { askBtn.disabled = false; askBtn.textContent = 'Ask Question'; }
+                if (textarea) textarea.value = '';
             }
         }
 
@@ -1652,6 +1935,86 @@
             }
         }
 
+        function updateSessionLabel(id) {
+            sessionId = id || null;
+            const el = document.getElementById('session-id-label');
+            if (el) el.textContent = sessionId || 'none';
+        }
+
+        async function startSession() {
+            const textarea = document.getElementById('analyze-text');
+            const text = (textarea && textarea.value) ? textarea.value.trim() : '';
+            if (!text) {
+                alert('Paste case text first to start a session.');
+                return;
+            }
+            try {
+                resetUI();
+                const res = await fetch(`${API_BASE}/session/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Failed to start session');
+                }
+                const data = await res.json();
+                updateSessionLabel(data.session_id);
+                const output = data.output || {};
+                pipelineData = output;
+                events = output.events || [];
+                renderInitial(output);
+                updateCurrentCaseDisplay(output.current_case_id ?? output.case_id);
+                updateOutputPathDisplay(output.output_path ?? null);
+            } catch (e) {
+                console.error('Start session failed:', e);
+                alert(`Failed to start session: ${e.message || e}`);
+            }
+        }
+
+        async function sendSessionMessage() {
+            if (!sessionId) {
+                alert('Start a session first.');
+                return;
+            }
+            const textarea = document.getElementById('analyze-text');
+            const message = (textarea && textarea.value) ? textarea.value.trim() : '';
+            if (!message) {
+                alert('Enter a follow-up message.');
+                return;
+            }
+            try {
+                const res = await fetch(`${API_BASE}/session/${sessionId}/message`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Failed to send message');
+                }
+                const data = await res.json();
+                if (data.turn_type === 'explanation') {
+                    const el = document.getElementById('explanation-content');
+                    if (el) el.innerHTML = `<div style="padding: 12px; font-size: 13px; line-height: 1.5;">${data.explanation || 'No explanation available.'}</div>`;
+                    showTab('explanation');
+                } else if (data.turn_type === 'update') {
+                    const output = data.output || {};
+                    pipelineData = output;
+                    events = output.events || [];
+                    renderInitial(output);
+                    updateCurrentCaseDisplay(output.current_case_id ?? output.case_id);
+                    updateOutputPathDisplay(output.output_path ?? null);
+                } else {
+                    alert(data.message || 'Please add new clinical info or ask for an explanation.');
+                }
+            } catch (e) {
+                console.error('Session message failed:', e);
+                alert(`Failed to send message: ${e.message || e}`);
+            }
+        }
+
         function resetUI() {
             currentEventIndex = 0;
             isPlaying = false;
@@ -1666,7 +2029,7 @@
             document.querySelectorAll('.step-chip').forEach(chip => {
                 chip.classList.remove('active', 'completed');
             });
-            const durationIds = ['LAB_NORMALIZE', 'CONTEXT_SELECT', 'EVIDENCE_SCORE', 'REASON', 'GUARDRAILS', 'FINAL'];
+            const durationIds = ['LAB_NORMALIZE', 'CONTEXT_SELECT', 'EVIDENCE_SCORE', 'REASON', 'CRITIC', 'GUARDRAILS', 'FINAL'];
             durationIds.forEach(step => {
                 const el = document.getElementById('duration-' + step);
                 if (el) el.textContent = '';
@@ -1694,6 +2057,8 @@
             if (caseOverview) caseOverview.textContent = '';
             const guidanceContent = document.getElementById('guidance-content');
             if (guidanceContent) guidanceContent.innerHTML = '<div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">Load a case to see step-by-step guidance</div>';
+            const explanationContent = document.getElementById('explanation-content');
+            if (explanationContent) explanationContent.innerHTML = '<div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">Ask a follow-up question to see an explanation</div>';
             const nextStepsContent = document.getElementById('next-steps-content');
             if (nextStepsContent) nextStepsContent.innerHTML = '<div style="padding: 16px; color: #6c757d; font-size: 13px; text-align: center;">Load a case to see recommended next steps</div>';
             const abnormalLabsEl = document.getElementById('abnormal-labs');
@@ -1878,36 +2243,36 @@
                     {
                         selector: 'node[type="Marker"]',
                         style: {
-                            'background-color': '#90CAF9',
-                            'border-color': '#1976D2',
-                            'background-opacity': 0.95,
+                            'background-color': '#a8c7fa',
+                            'border-color': '#1a73e8',
+                            'background-opacity': 0.9,
                             'shape': 'round-rectangle'
                         }
                     },
                     {
                         selector: 'node[type="Pattern"]',
                         style: {
-                            'background-color': '#A5D6A7',
-                            'border-color': '#388E3C',
-                            'background-opacity': 0.95,
+                            'background-color': '#a8dab5',
+                            'border-color': '#137333',
+                            'background-opacity': 0.9,
                             'shape': 'ellipse'
                         }
                     },
                     {
                         selector: 'node[type="Condition"]',
                         style: {
-                            'background-color': '#FFCC80',
-                            'border-color': '#F57C00',
-                            'background-opacity': 0.95,
+                            'background-color': '#fdd663',
+                            'border-color': '#ea8600',
+                            'background-opacity': 0.9,
                             'shape': 'round-octagon'
                         }
                     },
                     {
                         selector: 'node[type="Test"]',
                         style: {
-                            'background-color': '#CE93D8',
-                            'border-color': '#7B1FA2',
-                            'background-opacity': 0.95,
+                            'background-color': '#d7aefb',
+                            'border-color': '#7b1fa2',
+                            'background-opacity': 0.9,
                             'shape': 'diamond'
                         }
                     },
@@ -1942,8 +2307,8 @@
                     {
                         selector: 'edge[relation="SUPPORTS"]',
                         style: {
-                            'line-color': '#4CAF50',
-                            'target-arrow-color': '#4CAF50',
+                            'line-color': '#137333',
+                            'target-arrow-color': '#137333',
                             'width': 3,
                             'opacity': 0.7
                         }
@@ -1951,8 +2316,8 @@
                     {
                         selector: 'edge[relation="CONTRADICTS"]',
                         style: {
-                            'line-color': '#f44336',
-                            'target-arrow-color': '#f44336',
+                            'line-color': '#c5221f',
+                            'target-arrow-color': '#c5221f',
                             'width': 3,
                             'opacity': 0.7
                         }
@@ -1960,8 +2325,8 @@
                     {
                         selector: 'edge[relation="RECOMMENDS_TEST"]',
                         style: {
-                            'line-color': '#FF9800',
-                            'target-arrow-color': '#FF9800',
+                            'line-color': '#ea8600',
+                            'target-arrow-color': '#ea8600',
                             'width': 4,
                             'line-style': 'dashed',
                             'opacity': 0.8
@@ -1970,8 +2335,8 @@
                     {
                         selector: 'edge[relation="CAUSES"], edge[relation="INCREASES"], edge[relation="DECREASES"]',
                         style: {
-                            'line-color': '#2196F3',
-                            'target-arrow-color': '#2196F3',
+                            'line-color': '#1a73e8',
+                            'target-arrow-color': '#1a73e8',
                             'width': 3,
                             'opacity': 0.7
                         }
@@ -1979,8 +2344,8 @@
                     {
                         selector: 'node.highlighted',
                         style: {
-                            'background-color': '#4CAF50',
-                            'border-color': '#2E7D32',
+                            'background-color': '#1a73e8',
+                            'border-color': '#1557b0',
                             'border-width': 4,
                             'width': '85px',
                             'height': '85px',
@@ -1990,9 +2355,9 @@
                     {
                         selector: 'edge.highlighted',
                         style: {
-                            'line-color': '#4CAF50',
-                            'target-arrow-color': '#4CAF50',
-                            'width': 6,
+                            'line-color': '#1a73e8',
+                            'target-arrow-color': '#1a73e8',
+                            'width': 5,
                             'opacity': 1,
                             'z-index': 998
                         }
@@ -2000,9 +2365,9 @@
                     {
                         selector: 'edge.conclusion-support',
                         style: {
-                            'line-color': '#2E7D32',
-                            'target-arrow-color': '#2E7D32',
-                            'width': 5,
+                            'line-color': '#137333',
+                            'target-arrow-color': '#137333',
+                            'width': 4,
                             'opacity': 1,
                             'z-index': 997
                         }
@@ -2010,8 +2375,8 @@
                     {
                         selector: 'node.conclusion-recommended',
                         style: {
-                            'background-color': '#7B1FA2',
-                            'border-color': '#4A148C',
+                            'background-color': '#7b1fa2',
+                            'border-color': '#4a148c',
                             'border-width': 5,
                             'z-index': 996
                         }
@@ -2019,9 +2384,9 @@
                     {
                         selector: 'edge.conclusion-recommended',
                         style: {
-                            'line-color': '#7B1FA2',
-                            'target-arrow-color': '#7B1FA2',
-                            'width': 5,
+                            'line-color': '#7b1fa2',
+                            'target-arrow-color': '#7b1fa2',
+                            'width': 4,
                             'line-style': 'dashed',
                             'opacity': 1,
                             'z-index': 995
@@ -2030,16 +2395,16 @@
                     {
                         selector: 'node.pulsing',
                         style: {
-                            'background-color': '#66BB6A',
-                            'border-color': '#4CAF50',
+                            'background-color': '#34a853',
+                            'border-color': '#137333',
                             'border-width': 5
                         }
                     },
                     {
                         selector: 'edge.flowing',
                         style: {
-                            'line-color': '#2196F3',
-                            'target-arrow-color': '#2196F3',
+                            'line-color': '#1a73e8',
+                            'target-arrow-color': '#1a73e8',
                             'width': 5
                         }
                     }
@@ -2156,9 +2521,9 @@
                 // What would change my mind
                 const changeMind = hypo.what_would_change_my_mind || [];
                 const changeMindHtml = changeMind.length > 0 ? `
-                    <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; border-left: 3px solid #667eea;">
-                        <div style="font-size: 11px; font-weight: 600; color: #667eea; margin-bottom: 6px;">What would change my mind:</div>
-                        <ul style="margin: 0; padding-left: 18px; font-size: 11px; color: #495057; line-height: 1.5;">
+                    <div style="margin-top: 10px; padding: 10px 12px; background: var(--c-bg); border-radius: var(--r-md); border-left: 3px solid var(--c-primary);">
+                        <div style="font-size: 11px; font-weight: 600; color: var(--c-primary); margin-bottom: 4px;">What would change my mind</div>
+                        <ul style="margin: 0; padding-left: 18px; font-size: 11px; color: var(--c-text-sec); line-height: 1.5;">
                             ${changeMind.map(item => `<li>${item}</li>`).join('')}
                         </ul>
                     </div>
@@ -2169,9 +2534,9 @@
                     : '';
                 const reasoningText = hypo.reasoning && String(hypo.reasoning).trim();
                 const reasoningHtml = reasoningText ? `
-                    <div style="margin-top: 10px; padding: 10px; background: #e3f2fd; border-radius: 6px; border-left: 3px solid #2196F3;">
-                        <div style="font-size: 11px; font-weight: 600; color: #1976D2; margin-bottom: 4px;">MedGemma reasoning:</div>
-                        <div style="font-size: 12px; color: #424242; line-height: 1.5;">${reasoningText}</div>
+                    <div style="margin-top: 10px; padding: 10px 12px; background: var(--c-primary-light); border-radius: var(--r-md); border-left: 3px solid var(--c-primary);">
+                        <div style="font-size: 10px; font-weight: 600; color: var(--c-primary-dark); margin-bottom: 3px; text-transform: uppercase; letter-spacing: .3px;">MedGemma Reasoning</div>
+                        <div style="font-size: 12px; color: var(--c-text); line-height: 1.6;">${reasoningText}</div>
                     </div>
                 ` : '';
                 return `
@@ -2187,9 +2552,9 @@
                             </div>
                         </div>
                         ${evidenceCount > 0 || counterEvidenceCount > 0 ? `
-                            <div style="font-size: 11px; color: #6c757d; margin-bottom: 10px;">
-                                ${evidenceCount > 0 ? `<span style="color: #4CAF50;">✓ ${evidenceCount} supporting</span>` : ''}
-                                ${counterEvidenceCount > 0 ? `<span style="color: #f44336; margin-left: 8px;">✗ ${counterEvidenceCount} contradicting</span>` : ''}
+                            <div style="font-size: 11px; color: var(--c-text-ter); margin-bottom: 8px;">
+                                ${evidenceCount > 0 ? `<span style="color: var(--c-success);">${evidenceCount} supporting</span>` : ''}
+                                ${counterEvidenceCount > 0 ? `<span style="color: var(--c-error); margin-left: 8px;">${counterEvidenceCount} contradicting</span>` : ''}
                             </div>
                         ` : ''}
                         ${reasoningHtml}
@@ -2252,10 +2617,10 @@
             }
             const insightsHtml = novelInsights.map(item => {
                 return `
-                    <div class="hypothesis-card" style="border-left: 3px solid #ff9800;">
+                    <div class="hypothesis-card" style="border-left: 3px solid var(--c-warning);">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                            <div style="font-weight: 600; color: #333;">${item.insight || 'Novel insight'}</div>
-                            <span style="font-size: 10px; background: #fff3e0; color: #e65100; padding: 2px 6px; border-radius: 10px;">Outside KG</span>
+                            <div style="font-weight: 600; color: var(--c-text);">${item.insight || 'Novel insight'}</div>
+                            <span style="font-size: 10px; background: var(--c-warning-bg); color: #b06000; padding: 2px 8px; border-radius: var(--r-pill); font-weight: 500;">Outside KG</span>
                         </div>
                         ${item.rationale ? `<div style="font-size: 12px; color: #666;">${item.rationale}</div>` : ''}
                     </div>
@@ -2271,11 +2636,11 @@
             }
             const actionsHtml = actions.map(action => {
                 return `
-                    <div class="action-card" style="margin-bottom: 12px; border-left: 3px solid #ff9800;">
+                    <div class="action-card" style="margin-bottom: 10px; border-left: 3px solid var(--c-warning);">
                         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 6px;">
                             <div class="task" style="flex: 1;">${action.task}</div>
                             <div style="display: flex; gap: 6px; align-items: center;">
-                                <span style="font-size: 10px; background: #fff3e0; color: #e65100; padding: 2px 6px; border-radius: 10px;">Outside KG</span>
+                                <span style="font-size: 10px; background: var(--c-warning-bg); color: #b06000; padding: 2px 8px; border-radius: var(--r-pill); font-weight: 500;">Outside KG</span>
                                 ${action.risk ? `<span class="risk ${action.risk}" style="margin-left: 4px;">${action.risk} risk</span>` : ''}
                             </div>
                         </div>
@@ -2299,32 +2664,37 @@
                 'LAB_NORMALIZE': {
                     title: 'Lab Normalization',
                     description: 'Converting raw lab values into standardized formats and identifying abnormal values that need attention.',
-                    icon: '🔬'
+                    icon: '1'
                 },
                 'CONTEXT_SELECT': {
                     title: 'Context Selection',
                     description: 'Identifying relevant medical patterns and conditions from the knowledge graph based on abnormal lab values.',
-                    icon: '🎯'
+                    icon: '2'
                 },
                 'EVIDENCE_SCORE': {
                     title: 'Evidence Scoring',
                     description: 'Evaluating how strongly each piece of evidence supports or contradicts potential diagnoses.',
-                    icon: '⚖️'
+                    icon: '3'
                 },
                 'REASON': {
                     title: 'Reasoning',
                     description: 'Generating diagnostic hypotheses by combining evidence scores with medical knowledge.',
-                    icon: '🧠'
+                    icon: '4'
+                },
+                'CRITIC': {
+                    title: 'Critic Review',
+                    description: 'Reviewing hypotheses for safety and evidence alignment; applying corrections.',
+                    icon: '5'
                 },
                 'GUARDRAILS': {
                     title: 'Safety Guardrails',
                     description: 'Checking recommendations against safety rules to prevent harmful actions.',
-                    icon: '🛡️'
+                    icon: '6'
                 },
                 'FINAL': {
                     title: 'Final Output',
                     description: 'Compiling final recommendations with safety checks applied.',
-                    icon: '✅'
+                    icon: '7'
                 }
             };
             
@@ -2342,13 +2712,13 @@
                 const isActive = events.some(e => e && e.step === step && e.type === 'STEP_START' && !completedSteps.has(step));
                 
                 html += `
-                    <div style="margin-bottom: 16px; padding: 12px; background: ${isCompleted ? '#e8f5e9' : isActive ? '#e3f2fd' : '#f5f5f5'}; border-radius: 8px; border-left: 4px solid ${isCompleted ? '#4CAF50' : isActive ? '#2196F3' : '#ccc'};">
-                        <div style="display: flex; align-items: center; margin-bottom: 6px;">
-                            <span style="font-size: 18px; margin-right: 8px;">${info.icon}</span>
-                            <h4 style="margin: 0; font-size: 14px; font-weight: 600; color: #333;">${info.title}</h4>
-                            ${isCompleted ? '<span style="margin-left: auto; color: #4CAF50; font-size: 12px;">✓ Complete</span>' : isActive ? '<span style="margin-left: auto; color: #2196F3; font-size: 12px;">In progress...</span>' : ''}
+                    <div style="margin-bottom: 10px; padding: 12px 14px; background: ${isCompleted ? 'var(--c-success-bg)' : isActive ? 'var(--c-primary-light)' : 'var(--c-bg)'}; border-radius: var(--r-md); border-left: 3px solid ${isCompleted ? 'var(--c-success)' : isActive ? 'var(--c-primary)' : 'var(--c-border)'};">
+                        <div style="display: flex; align-items: center; margin-bottom: 4px;">
+                            <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: ${isCompleted ? 'var(--c-success)' : isActive ? 'var(--c-primary)' : 'var(--c-text-ter)'}; color: #fff; font-size: 11px; font-weight: 600; margin-right: 10px; flex-shrink: 0;">${info.icon}</span>
+                            <h4 style="margin: 0; font-size: 13px; font-weight: 600; color: var(--c-text);">${info.title}</h4>
+                            ${isCompleted ? '<span style="margin-left: auto; color: var(--c-success); font-size: 11px; font-weight: 500;">Complete</span>' : isActive ? '<span style="margin-left: auto; color: var(--c-primary); font-size: 11px; font-weight: 500;">In progress</span>' : ''}
                         </div>
-                        <div style="font-size: 12px; color: #666; line-height: 1.5;">${info.description}</div>
+                        <div style="font-size: 12px; color: var(--c-text-sec); line-height: 1.5; margin-left: 32px;">${info.description}</div>
                     </div>
                 `;
             });
@@ -2357,17 +2727,17 @@
             const caseId = data.case_card?.case_id || '';
             if (caseId.includes('gotcha') || caseId.includes('inflammation')) {
                 html += `
-                    <div style="margin-top: 20px; padding: 14px; background: #fff3e0; border-radius: 8px; border-left: 4px solid #FF9800;">
-                        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600; color: #e65100;">⚠️ Important: Anemia of Inflammation Case</h4>
-                        <div style="font-size: 12px; color: #424242; line-height: 1.6;">
-                            <p style="margin: 0 0 8px 0;">This case demonstrates a common diagnostic challenge: <strong>high ferritin levels during inflammation</strong> can mask iron deficiency.</p>
-                            <p style="margin: 0 0 8px 0;">The system detected that iron supplementation would be unsafe because:</p>
-                            <ul style="margin: 0 0 8px 0; padding-left: 20px;">
+                    <div style="margin-top: 16px; padding: 14px; background: var(--c-warning-bg); border-radius: var(--r-md); border-left: 3px solid var(--c-warning);">
+                        <h4 style="margin: 0 0 6px 0; font-size: 13px; font-weight: 600; color: #b06000;">Clinical Note: Anemia of Inflammation</h4>
+                        <div style="font-size: 12px; color: var(--c-text); line-height: 1.6;">
+                            <p style="margin: 0 0 6px 0;">This case demonstrates a common diagnostic challenge: <strong>high ferritin levels during inflammation</strong> can mask iron deficiency.</p>
+                            <p style="margin: 0 0 6px 0;">The system detected that iron supplementation would be unsafe because:</p>
+                            <ul style="margin: 0 0 6px 0; padding-left: 20px; color: var(--c-text-sec);">
                                 <li>Ferritin is an acute-phase reactant (increases during inflammation)</li>
                                 <li>Supplementing iron during active inflammation can worsen the condition</li>
                                 <li>The underlying inflammation must be addressed first</li>
                             </ul>
-                            <p style="margin: 0; font-weight: 600; color: #e65100;">The guardrail system automatically removed the unsafe iron supplementation recommendation.</p>
+                            <p style="margin: 0; font-weight: 600; color: #b06000;">The guardrail system automatically removed the unsafe recommendation.</p>
                         </div>
                     </div>
                 `;
@@ -2404,12 +2774,12 @@
             
             if (allTests.length > 0) {
                 html += `
-                    <div style="margin-bottom: 16px; padding: 12px; background: #e3f2fd; border-radius: 8px; border-left: 4px solid #2196F3;">
-                        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600; color: #1976D2;">🔬 Priority Tests</h4>
-                        <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #424242; line-height: 1.6;">
+                    <div style="margin-bottom: 12px; padding: 12px 14px; background: var(--c-primary-light); border-radius: var(--r-md); border-left: 3px solid var(--c-primary);">
+                        <h4 style="margin: 0 0 6px 0; font-size: 12px; font-weight: 600; color: var(--c-primary-dark); text-transform: uppercase; letter-spacing: .3px;">Priority Tests</h4>
+                        <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: var(--c-text); line-height: 1.6;">
                             ${allTests.map(test => `<li>${test}</li>`).join('')}
                         </ul>
-                        <div style="margin-top: 8px; font-size: 11px; color: #666; font-style: italic;">Order these tests to help confirm or rule out the top hypotheses.</div>
+                        <div style="margin-top: 6px; font-size: 11px; color: var(--c-text-ter);">Order these tests to confirm or rule out the top hypotheses.</div>
                     </div>
                 `;
             }
@@ -2421,9 +2791,9 @@
             });
             if (monitoringActions.length > 0) {
                 html += `
-                    <div style="margin-bottom: 16px; padding: 12px; background: #fff3e0; border-radius: 8px; border-left: 4px solid #FF9800;">
-                        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600; color: #e65100;">📊 Monitoring</h4>
-                        <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #424242; line-height: 1.6;">
+                    <div style="margin-bottom: 12px; padding: 12px 14px; background: var(--c-warning-bg); border-radius: var(--r-md); border-left: 3px solid var(--c-warning);">
+                        <h4 style="margin: 0 0 6px 0; font-size: 12px; font-weight: 600; color: #b06000; text-transform: uppercase; letter-spacing: .3px;">Monitoring</h4>
+                        <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: var(--c-text); line-height: 1.6;">
                             ${monitoringActions.map(a => `<li>${a.task}</li>`).join('')}
                         </ul>
                     </div>
@@ -2444,9 +2814,9 @@
                 }
                 
                 html += `
-                    <div style="margin-bottom: 16px; padding: 12px; background: #f3e5f5; border-radius: 8px; border-left: 4px solid #9C27B0;">
-                        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600; color: #7B1FA2;">📅 Follow-up Timing</h4>
-                        <div style="font-size: 12px; color: #424242; line-height: 1.6;">${followUpTiming}</div>
+                    <div style="margin-bottom: 12px; padding: 12px 14px; background: #f3e8fd; border-radius: var(--r-md); border-left: 3px solid #7b1fa2;">
+                        <h4 style="margin: 0 0 6px 0; font-size: 12px; font-weight: 600; color: #7b1fa2; text-transform: uppercase; letter-spacing: .3px;">Follow-up Timing</h4>
+                        <div style="font-size: 12px; color: var(--c-text); line-height: 1.6;">${followUpTiming}</div>
                     </div>
                 `;
             }
@@ -2454,10 +2824,10 @@
             // Safety note if guardrails were applied
             if (data.guardrail_report && data.guardrail_report.failed_rules && data.guardrail_report.failed_rules.length > 0) {
                 html += `
-                    <div style="margin-bottom: 16px; padding: 12px; background: #ffebee; border-radius: 8px; border-left: 4px solid #f44336;">
-                        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600; color: #c62828;">🛡️ Safety Note</h4>
-                        <div style="font-size: 12px; color: #424242; line-height: 1.6;">
-                            The system automatically removed unsafe recommendations. Review the "Guidance" tab for details about what was blocked and why.
+                    <div style="margin-bottom: 12px; padding: 12px 14px; background: var(--c-error-bg); border-radius: var(--r-md); border-left: 3px solid var(--c-error);">
+                        <h4 style="margin: 0 0 6px 0; font-size: 12px; font-weight: 600; color: var(--c-error); text-transform: uppercase; letter-spacing: .3px;">Safety Note</h4>
+                        <div style="font-size: 12px; color: var(--c-text); line-height: 1.6;">
+                            The system automatically removed unsafe recommendations. Review the Guidance tab for details.
                         </div>
                     </div>
                 `;
@@ -2666,8 +3036,8 @@
                         node.addClass('highlighted');
                         node.animate({
                             style: {
-                                'background-color': '#4CAF50',
-                                'border-color': '#2E7D32',
+                                'background-color': '#1a73e8',
+                                'border-color': '#1557b0',
                                 'border-width': 5,
                                 'width': '90px',
                                 'height': '90px'
@@ -2696,9 +3066,9 @@
                         edge.addClass('highlighted');
                         edge.animate({
                             style: {
-                                'line-color': '#4CAF50',
-                                'target-arrow-color': '#4CAF50',
-                                'width': 7,
+                                'line-color': '#1a73e8',
+                                'target-arrow-color': '#1a73e8',
+                                'width': 6,
                                 'opacity': 1
                             }
                         }, {
@@ -2762,7 +3132,11 @@
             }
             
             failCard.innerHTML = `
-                <h4>⚠️ Guardrail Failed</h4>
+                <div class="trust-pill trust-pill-danger">Safety Intercept</div>
+                <h4>Unsafe recommendation blocked</h4>
+                <div style="font-size: 12px; color: #6a1b1a; margin-bottom: 10px;">
+                    ${failedRules.length} guardrail rule${failedRules.length === 1 ? '' : 's'} triggered. The output is being patched automatically.
+                </div>
                 ${rulesHtml}
             `;
             trustMoments.appendChild(failCard);
@@ -2832,7 +3206,8 @@
             const diffHtml = createDiffHtml(before, after);
             
             patchCard.innerHTML = `
-                <h4>🔧 Safety Patch Applied</h4>
+                <div class="trust-pill trust-pill-warn">Safety Patch</div>
+                <h4>Unsafe content removed before final output</h4>
                 ${explanationHtml}
                 <div style="margin-top: 12px; font-size: 11px; color: #666; font-style: italic;">
                     The system automatically removed unsafe recommendations. See details below.
@@ -3071,16 +3446,16 @@
             // Show model usage if available
             const modelUsage = pipelineData.model_usage;
             if (modelUsage && modelUsage.model_mode) {
-                html += '<div style="margin-bottom: 16px; padding: 12px; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 8px; border-left: 4px solid #2196F3;">';
-                html += '<h5 style="font-size: 13px; font-weight: 700; color: #1976D2; margin-bottom: 8px;">🤖 Model Usage</h5>';
-                html += `<div style="font-size: 12px; color: #424242;">Model calls: ${modelUsage.model_calls || 0} | Agent decisions: ${modelUsage.agent_decisions || 0}</div>`;
+                html += '<div style="margin-bottom: 14px; padding: 10px 12px; background: var(--c-primary-light); border-radius: var(--r-md); border-left: 3px solid var(--c-primary);">';
+                html += '<h5 style="font-size: 11px; font-weight: 600; color: var(--c-primary-dark); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .3px;">Model Usage</h5>';
+                html += `<div style="font-size: 12px; color: var(--c-text); font-family: var(--mono);">Model calls: ${modelUsage.model_calls || 0} &middot; Agent decisions: ${modelUsage.agent_decisions || 0}</div>`;
                 html += '</div>';
             }
             
             // Show model reasoning from events
             const modelEvents = events.filter(e => e && e.type === 'MODEL_CALLED' && e.payload && e.payload.status === 'success');
             if (modelEvents.length > 0) {
-                html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">Model Reasoning:</h5>';
+                html += '<h5 style="margin-top: 14px; font-size: 11px; font-weight: 600; color: var(--c-text-sec); text-transform: uppercase; letter-spacing: .3px;">Model Reasoning</h5>';
                 modelEvents.forEach((event, idx) => {
                     const payload = event.payload || {};
                     const agentType = (payload.agent_type != null) ? String(payload.agent_type) : 'unknown';
@@ -3088,9 +3463,9 @@
                     const cached = payload.cached ? ' (cached)' : '';
                     const agentDisplay = agentType.replace(/_/g, ' ').replace(/\b\w/g, ch => (ch && typeof ch === 'string') ? ch.toUpperCase() : ch);
                     html += `
-                        <div class="evidence-item" style="border-left-color: #2196F3;">
+                        <div class="evidence-item" style="border-left-color: var(--c-primary);">
                             <strong>${agentDisplay}</strong>
-                            <div class="edge-id">Response time: ${responseTime}${cached}</div>
+                            <div class="edge-id">Response: ${responseTime}${cached}</div>
                         </div>
                     `;
                 });
@@ -3099,18 +3474,18 @@
             // Show agent decisions
             const agentDecisions = events.filter(e => e && e.type === 'AGENT_DECISION');
             if (agentDecisions.length > 0) {
-                html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">Agent Decisions:</h5>';
+                html += '<h5 style="margin-top: 14px; font-size: 11px; font-weight: 600; color: var(--c-text-sec); text-transform: uppercase; letter-spacing: .3px;">Agent Decisions</h5>';
                 agentDecisions.forEach((event, idx) => {
                     const payload = event.payload || {};
                     const agentType = (payload.agent_type != null) ? String(payload.agent_type) : 'unknown';
                     const decision = (payload.decision != null) ? String(payload.decision) : 'unknown';
                     const rationale = (payload.rationale != null) ? String(payload.rationale) : '';
-                    const decisionColor = decision === 'use_model' ? '#4CAF50' : '#9E9E9E';
+                    const decisionColor = decision === 'use_model' ? 'var(--c-primary)' : 'var(--c-text-ter)';
                     const agentDisplay = agentType.replace(/_/g, ' ').replace(/\b\w/g, ch => (ch && typeof ch === 'string') ? ch.toUpperCase() : ch);
                     html += `
                         <div class="evidence-item" style="border-left-color: ${decisionColor};">
                             <strong>${agentDisplay}</strong>: 
-                            <span style="color: ${decisionColor}; font-weight: 600;">${decision === 'use_model' ? 'Using Model' : 'Using Rules'}</span>
+                            <span style="color: ${decisionColor}; font-weight: 600;">${decision === 'use_model' ? 'Model' : 'Rules'}</span>
                             ${rationale ? `<div class="edge-id">${rationale}</div>` : ''}
                         </div>
                     `;
@@ -3119,14 +3494,14 @@
             
             // Show candidate scores if available
             if (evidenceBundle.candidate_scores && Object.keys(evidenceBundle.candidate_scores).length > 0) {
-                html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">Pattern Scores:</h5>';
+                html += '<h5 style="margin-top: 14px; font-size: 11px; font-weight: 600; color: var(--c-text-sec); text-transform: uppercase; letter-spacing: .3px;">Pattern Scores</h5>';
                 const scores = Object.entries(evidenceBundle.candidate_scores)
                     .sort((a, b) => b[1] - a[1])
                     .map(([pattern, score]) => {
                         const percentage = Math.round(score * 100);
                         return `
-                            <div class="evidence-item" style="border-left-color: #667eea;">
-                                <strong>${pattern}</strong>: ${percentage}% confidence
+                            <div class="evidence-item" style="border-left-color: var(--c-primary);">
+                                <strong>${pattern}</strong>: <span style="font-family: var(--mono);">${percentage}%</span>
                             </div>
                         `;
                     }).join('');
@@ -3135,23 +3510,23 @@
             
             // Show top discriminators
             if (evidenceBundle.top_discriminators && evidenceBundle.top_discriminators.length > 0) {
-                html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">Key Evidence Items:</h5>';
+                html += '<h5 style="margin-top: 14px; font-size: 11px; font-weight: 600; color: var(--c-text-sec); text-transform: uppercase; letter-spacing: .3px;">Key Evidence</h5>';
                 evidenceBundle.top_discriminators.forEach(item => {
                     const relation = item.relation || 'SUPPORTS';
-                    const borderColor = relation === 'SUPPORTS' ? '#4CAF50' : '#f44336';
+                    const borderColor = relation === 'SUPPORTS' ? 'var(--c-success)' : 'var(--c-error)';
                     html += `
                         <div class="evidence-item" style="border-left-color: ${borderColor};">
-                            <strong>${item.marker}</strong> (${item.marker_status === 'REFERENCE_UNKNOWN' ? 'Reference unknown' : item.marker_status}) 
+                            <strong>${item.marker}</strong> (${item.marker_status === 'REFERENCE_UNKNOWN' ? 'Ref unknown' : item.marker_status}) 
                             <span style="color: ${borderColor}; font-weight: 600;">${relation}</span> 
                             ${item.pattern_id}
-                            <div class="edge-id">Edge: ${item.edge_id} | Weight: ${item.weight?.toFixed(2) || 'N/A'}</div>
+                            <div class="edge-id">Edge: ${item.edge_id} &middot; Weight: ${item.weight?.toFixed(2) || 'N/A'}</div>
                         </div>
                     `;
                 });
             }
             
             if (evidenceBundle.supports && evidenceBundle.supports.length > 0) {
-                html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">All Supporting Evidence:</h5>';
+                html += '<h5 style="margin-top: 14px; font-size: 11px; font-weight: 600; color: var(--c-text-sec); text-transform: uppercase; letter-spacing: .3px;">Supporting Evidence</h5>';
                 evidenceBundle.supports.forEach(item => {
                     html += `
                         <div class="evidence-item">
@@ -3163,10 +3538,10 @@
             }
             
             if (evidenceBundle.contradictions && evidenceBundle.contradictions.length > 0) {
-                html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">All Contradicting Evidence:</h5>';
+                html += '<h5 style="margin-top: 14px; font-size: 11px; font-weight: 600; color: var(--c-text-sec); text-transform: uppercase; letter-spacing: .3px;">Contradicting Evidence</h5>';
                 evidenceBundle.contradictions.forEach(item => {
                     html += `
-                        <div class="evidence-item" style="border-left-color: #f44336;">
+                        <div class="evidence-item" style="border-left-color: var(--c-error);">
                             <strong>${item.marker}</strong> (${item.marker_status === 'REFERENCE_UNKNOWN' ? 'Reference unknown' : item.marker_status}) → ${item.pattern_id}
                             <div class="edge-id">Edge: ${item.edge_id}</div>
                         </div>
@@ -3176,8 +3551,8 @@
             
             // Show raw model output if available
             if (pipelineData.reasoner_output && pipelineData.reasoner_output.raw_model_output) {
-                html += '<h5 style="margin-top: 16px; font-size: 13px; font-weight: 700; color: #495057;">Raw Model Output:</h5>';
-                html += `<div class="evidence-item" style="border-left-color: #9E9E9E; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 200px; overflow-y: auto;">${pipelineData.reasoner_output.raw_model_output.substring(0, 500)}${pipelineData.reasoner_output.raw_model_output.length > 500 ? '...' : ''}</div>`;
+                html += '<h5 style="margin-top: 14px; font-size: 11px; font-weight: 600; color: var(--c-text-sec); text-transform: uppercase; letter-spacing: .3px;">Raw Model Output</h5>';
+                html += `<div class="evidence-item" style="border-left-color: var(--c-text-ter); font-family: var(--mono); font-size: 11px; white-space: pre-wrap; max-height: 200px; overflow-y: auto;">${pipelineData.reasoner_output.raw_model_output.substring(0, 500)}${pipelineData.reasoner_output.raw_model_output.length > 500 ? '...' : ''}</div>`;
             }
             
             if (!html) {
@@ -3263,8 +3638,8 @@
                             <h6>
                                 <span class="agent-type">${agentTypeDisplay}</span>
                             </h6>
-                            <div style="font-size: 11px; color: ${isModelUsed ? '#1976D2' : '#616161'}; font-weight: 600;">
-                                ${isModelUsed ? '🤖 Using Model' : '📋 Using Rules'}
+                            <div style="font-size: 11px; color: ${isModelUsed ? 'var(--c-primary-dark)' : 'var(--c-text-sec)'}; font-weight: 600;">
+                                ${isModelUsed ? 'Using Model' : 'Using Rules'}
                             </div>
                             ${responseTime ? `<div class="agent-time">Response: ${responseTime}${cached}</div>` : ''}
                             ${rationale ? `<div class="agent-rationale">${rationale}</div>` : ''}

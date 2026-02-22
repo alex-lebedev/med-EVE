@@ -107,7 +107,9 @@ This document defines the target contracts (data structures and protocols) for t
 - `CONTEXT_SELECT`
 - `EVIDENCE_SCORE`
 - `REASON`
+- `CRITIC`
 - `GUARDRAILS`
+- `CASE_IMPRESSION`
 - `FINAL`
 
 ### EventType Values
@@ -121,8 +123,34 @@ This document defines the target contracts (data structures and protocols) for t
 - `GUARDRAIL_FAIL`
 - `GUARDRAIL_PATCH_APPLIED`
 - `FINAL_READY`
+- `MODEL_CALLED`
+- `AGENT_DECISION`
+- `MODEL_WEIGHT_ASSIGNED`
+- `MODEL_REASONING_START`
+- `MODEL_REASONING_END`
 
 ### Event Payload Contracts
+
+#### MODEL_CALLED
+```python
+payload: {
+    "agent_type": str,       # e.g. "ranking", "reasoning", "critic", "case_impression"
+    "prompt_type": str,      # prompt category
+    "response_time_ms": float,
+    "status": str,           # "success" or "error"
+    "cached": bool,          # whether response came from cache
+    "error": str | None      # error message if status is "error"
+}
+```
+
+#### AGENT_DECISION
+```python
+payload: {
+    "agent_type": str,       # e.g. "hybrid_routing", "critic", "case_impression", "action_generation", "novel_insight"
+    "decision": str,         # "use_model" or "use_rules"
+    "rationale": str         # human-readable reason for the decision
+}
+```
 
 #### HIGHLIGHT
 ```python
@@ -162,6 +190,7 @@ payload: {
     "case_card": CaseCard,
     "evidence_bundle": EvidenceBundle,
     "reasoner_output": ReasonerOutput,
+    "critic_result": dict,
     "guardrail_report": dict,
     "case_impression": str,       # Short patient/case overview (2–4 sentences)
     "suggested_kg_additions": {   # When dynamic nodes/edges were added

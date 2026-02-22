@@ -7,12 +7,19 @@ pyyaml>=6.0
 # Testing
 pytest>=7.4.0
 
+# NumPy and torch baseline for local model mode
+numpy>=2.0.0
+
 # Model mode dependencies (MedGemma)
 # Required for agentic mode with MedGemma:
-torch>=2.0.0
-transformers>=4.35.0
-huggingface_hub>=0.19.0
+torch>=2.8.0
+transformers>=4.57.6
+huggingface_hub>=0.36.2
+sentencepiece>=0.2.0
 # Optional: For quantization (reduces memory usage on GPU)
-bitsandbytes>=0.41.0
+# Linux/CUDA only; avoid macOS import instability.
+bitsandbytes>=0.41.0; platform_system=="Linux"
 # Optional: For device_map="auto" (helps with multi-GPU, but not required for MPS/CPU)
-accelerate>=0.20.0
+accelerate>=0.21.0
+# Needed by some torch/accelerate code paths on Python 3.9
+importlib-metadata>=6.8.0

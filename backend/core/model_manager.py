@@ -16,9 +16,11 @@ try:
     from huggingface_hub import HfApi
     TRANSFORMERS_AVAILABLE = True
     HF_AVAILABLE = True
-except ImportError:
+    TRANSFORMERS_IMPORT_ERROR = ""
+except Exception as e:
     TRANSFORMERS_AVAILABLE = False
     HF_AVAILABLE = False
+    TRANSFORMERS_IMPORT_ERROR = str(e)
 
 # Support both 4B and 27B models via environment variable
 DEFAULT_MODEL = os.getenv("MEDGEMMA_MODEL", "google/medgemma-4b-it")
@@ -134,7 +136,11 @@ class ModelManager:
     def load_model(self):
         """Load MedGemma model - uses resolved source (local models/medgemma-4b-it or HuggingFace)."""
         if not TRANSFORMERS_AVAILABLE:
-            raise Exception("transformers not available. Install with: pip install transformers")
+            detail = f" ({TRANSFORMERS_IMPORT_ERROR})" if TRANSFORMERS_IMPORT_ERROR else ""
+            raise Exception(
+                "transformers not available or dependency import failed"
+                f"{detail}. Re-run setup.sh to install pinned requirements."
+            )
         if not HF_AVAILABLE:
             raise Exception("huggingface_hub not available. Install with: pip install huggingface_hub")
 

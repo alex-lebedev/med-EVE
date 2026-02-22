@@ -57,3 +57,31 @@ def test_guardrails_apply_to_novel_actions():
     assert report['status'] == 'FAIL'
     assert any(r['id'] == 'GR_001' and r.get("scope") == "novel_actions" for r in report['failed_rules'])
     assert any(p["path"].startswith("/novel_actions/") for p in report["patches"])
+
+
+def test_guardrails_gr002_adds_antibody_test_for_hashimoto():
+    reasoner_output = {
+        "hypotheses": [{
+            "id": "H1",
+            "name": "Hashimoto thyroiditis (likely)",
+            "confidence": 0.8,
+            "evidence": [],
+            "counter_evidence": [],
+            "next_tests": [],
+            "what_would_change_my_mind": []
+        }],
+        "patient_actions": [],
+        "novel_actions": [],
+        "red_flags": []
+    }
+    case_card = {"signals": ["p_hypothyroid"]}
+    normalized_labs = [{"marker": "TSH", "value": 7.1, "status": "HIGH"}]
+    report = check_guardrails(reasoner_output, case_card, normalized_labs)
+    assert report["status"] == "FAIL"
+    assert any(r["id"] == "GR_002" for r in report["failed_rules"])
+    assert any(
+        p["op"] == "add"
+        and p["path"] == "/hypotheses/0/next_tests/-"
+        and p.get("value", {}).get("test_id") == "t_tpo_ab"
+        for p in report["patches"]
+    )

@@ -261,6 +261,7 @@ See [LICENSE](LICENSE) for details.
 
 If you use this code, please cite:
 
-**Alexander Lebedev MD PhD and Luigi Espasiano MD** (Function Health)
 
-*med-EVE (Evidence Vector Engine): Medical AI Reasoning with Knowledge Graphs and Guardrails* — MedGemma Impact Challenge Submission.
+Lebedev, A. & Espasiano, L. (2026). med-EVE: Safe Agentic Medical Reasoning
+with MedGemma and Deterministic Evidence Graphs. MedGemma Impact Challenge.
+https://github.com/alex-lebedev/med-EVE

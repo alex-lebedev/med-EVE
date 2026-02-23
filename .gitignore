@@ -55,10 +55,5 @@ backend/output/
 backend/evals/results/
 
 # Archived reference variants (not part of primary submission path)
-med-EVE-openAI/
 med-EVE-aletheia/
 guardrails_and_other_prompts_examples/
-
-# Stale one-off artifacts (should not be tracked)
-evals_results.txt
-tasks.txt

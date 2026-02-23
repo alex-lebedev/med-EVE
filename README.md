@@ -42,7 +42,7 @@ This app does **not** use the OpenAI API or any other external LLM API. All mode
 
 ```bash
 # Clone repository
-git clone <repo-url>
+git clone https://github.com/alex-lebedev/med-EVE
 cd med-EVE
 
 # Install dependencies
@@ -125,7 +125,7 @@ See [models/README.md](models/README.md) if you want to put a model in the repo 
 
 1. **Clone and install**
    ```bash
-   git clone <repo-url>
+   git clone https://github.com/alex-lebedev/med-EVE
    cd med-EVE
    pip install -r requirements.txt
    ```
